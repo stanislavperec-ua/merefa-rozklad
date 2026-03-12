@@ -2,7 +2,7 @@ import os
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BotCommand
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8573318382:AAE15lvUv99IVGmA_0m9HrVHAyThjwUHnFM")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 MINIAPP_URL = "https://stanislavperec-ua.github.io/merefa-rozklad/"
 
 bot = telebot.TeleBot(BOT_TOKEN)
