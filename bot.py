@@ -9,29 +9,30 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 def webapp_button():
     kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton(text="Відкрити розклад", web_app=WebAppInfo(url=MINIAPP_URL)))
+    kb.add(InlineKeyboardButton(text="Vidkryty rozklad", web_app=WebAppInfo(url=MINIAPP_URL)))
     return kb
 
 @bot.message_handler(commands=["start"])
 def cmd_start(message):
-    bot.send_message(message.chat.id, "Розклад електричок Харків - Мерефа", reply_markup=webapp_button())
+    bot.send_message(message.chat.id, "Rozklad elektrichok Kharkiv - Merefa", reply_markup=webapp_button())
 
 @bot.message_handler(commands=["rozklad"])
 def cmd_rozklad(message):
-    bot.send_message(message.chat.id, "Розклад електричок Харків - Мерефа", reply_markup=webapp_button())
+    bot.send_message(message.chat.id, "Rozklad elektrichok Kharkiv - Merefa", reply_markup=webapp_button())
 
 @bot.message_handler(func=lambda m: True)
 def fallback(message):
-    bot.send_message(message.chat.id, "Напиши /rozklad", reply_markup=webapp_button())
+    bot.send_message(message.chat.id, "Napyshi /rozklad", reply_markup=webapp_button())
 
 def setup():
     bot.set_my_commands([
-        BotCommand("/rozklad", "Відкрити розклад електричок"),
-        BotCommand("/start", "Головне меню"),
+        BotCommand("/rozklad", "Vidkryty rozklad elektrichok"),
+        BotCommand("/start", "Holovne menu"),
     ])
-    print("Бот налаштовано")
+    print("Bot nalashtvovano")
 
 if __name__ == "__main__":
-    print("Бот запущено...")
+    print("Bot zapushcheno...")
     setup()
     bot.infinity_polling(timeout=30)
+
