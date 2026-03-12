@@ -218,7 +218,6 @@
 
   .t-time     { font-weight: 800; font-size: 15px; font-family: monospace; color: var(--amber); white-space: nowrap; }
   .t-time.cancelled { text-decoration: line-through; color: var(--red); }
-  .t-approx   { font-size: 9px; color: var(--dim); display: block; margin-top: 1px; }
   .t-num      { color: #fff; font-weight: 800; font-family: monospace; font-size: 13px; }
   .t-blue     { color: var(--blue); font-size: 12px; font-weight: 600; word-break: break-word; }
   .t-green    { color: var(--green); font-size: 12px; font-weight: 600; word-break: break-word; }
@@ -529,7 +528,7 @@ function timeCell(t, si, dir) {
   const ok = isAnch(dir, si, t);
   const star = ok ? "★" : "~";
   let html = `<span class="t-time${t.cancelled?" cancelled":""}">${star}${hhmm(t.time)}</span>`;
-  if (!ok && !t.cancelled) html += `<span class="t-approx">±3хв</span>`;
+
   return html;
 }
 
@@ -672,11 +671,11 @@ function renderContent() {
             <tr${t.cancelled?' class="row-cancelled"':''}>
               <td>
                 <span class="t-time${t.cancelled?" cancelled":""}">${dk?"★":"~"}${hhmm(t.dep)}</span>
-                ${!dk&&!t.cancelled?'<span class="t-approx">±3хв</span>':''}
+
               </td>
               <td>
                 <span class="t-time${t.cancelled?" cancelled":""}">${ak?"★":"~"}${hhmm(t.arr)}</span>
-                ${!ak&&!t.cancelled?'<span class="t-approx">±3хв</span>':''}
+
               </td>
               <td>
                 <span class="t-num">${t.num}</span><br>
@@ -705,5 +704,6 @@ loadData();
 </script>
 </body>
 </html>
+
 
 
