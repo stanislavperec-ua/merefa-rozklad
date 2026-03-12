@@ -1,7 +1,8 @@
+import os
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, MenuButtonWebApp, BotCommand
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BotCommand
 
-BOT_TOKEN = "8573318382:AAE15lvUv99IVGmA_0m9HrVHAyThjwUHnFM"
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8573318382:AAE15lvUv99IVGmA_0m9HrVHAyThjwUHnFM")
 MINIAPP_URL = "https://stanislavperec-ua.github.io/merefa-rozklad/"
 
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -28,21 +29,9 @@ def setup():
         BotCommand("/rozklad", "Відкрити розклад електричок"),
         BotCommand("/start", "Головне меню"),
     ])
-    bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
-        text="Розклад", web_app=WebAppInfo(url=MINIAPP_URL)))
     print("Бот налаштовано")
 
 if __name__ == "__main__":
     print("Бот запущено...")
     setup()
     bot.infinity_polling(timeout=30)
-```
-
-**4.** Натисни **Commit changes** → **Commit changes**
-
-**5.** Завантаж ZIP знову з GitHub → розпакуй (замінивши стару папку)
-
-**6.** У командному рядку:
-```
-cd Downloads\merefa-rozklad-main\merefa-rozklad-main
-python bot.py
