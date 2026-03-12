@@ -631,12 +631,23 @@ async function loadData() {
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const data = await resp.json();
 
-    // Застосовуємо примітки
+    // Застосовуємо примітки з cancellations та changes
     NOTES = {};
-    (data.notes || []).forEach(n => { NOTES[n.num] = n; });
+    const cancelled = data.cancellations || {};
+    const changed   = data.changes || {};
+    Object.keys(cancelled).forEach(num => {
+      NOTES[num] = { cancelled: true, note: "❌ Скасовано" };
+    });
+    Object.keys(changed).forEach(num => {
+      if (!NOTES[num]) NOTES[num] = { cancelled: true, note: "❌ Не курсує" };
+    });
 
     // Банер
-    if (data.alert) {
+    const allAffected = [...Object.keys(cancelled), ...Object.keys(changed)];
+    if (allAffected.length > 0) {
+      alertDiv.className = "";
+      alertEl.innerHTML = `<b>⚠</b> Не курсують: ${allAffected.join(", ")}`;
+    } else if (data.alert) {
       alertDiv.className = "";
       alertEl.innerHTML = `<b>⚠</b> ${data.alert}`;
     } else {
@@ -916,6 +927,7 @@ loadData();
 </script>
 </body>
 </html>
+
 
 
 
