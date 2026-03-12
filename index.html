@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Розклад електричок</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg:     #0a0f1a;
+    --panel:  #0d1322;
+    --card:   #111c2e;
+    --border: #253550;
+    --amber:  #ffd700;
+    --green:  #00e87a;
+    --blue:   #5bc8ff;
+    --muted:  #7a9bbf;
+    --dim:    #3a5570;
+    --warn:   #ff9a3c;
+    --red:    #ff4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: #fff; font-family: system-ui, sans-serif; font-size: 14px; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  #header { background: linear-gradient(135deg, #111927, #1a2540); border-bottom: 3px solid var(--amber); padding: 8px 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  #header h1 { font-size: 14px; font-weight: 900; color: var(--amber); font-family: monospace; white-space: nowrap; }
+  #date-box { background: #0d1830; border: 1px solid #2a4060; border-radius: 5px; padding: 4px 9px; font-size: 11px; color: var(--amber); font-weight: 700; font-family: monospace; white-space: nowrap; }
+  #alert { background: #1f1000; border-bottom: 2px solid var(--warn); padding: 5px 12px; font-size: 11px; color: #ffb86c; flex-shrink: 0; line-height: 1.5; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
+  #alert.ok { background: #001508; border-color: var(--green); color: #80ffb0; }
+  #alert b { color: var(--warn); }
+  #alert.ok b { color: var(--green); }
+  #alert-link { color: var(--blue); font-size: 11px; text-decoration: underline; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  #status-bar { font-size: 10px; color: var(--dim); text-align: right; padding: 2px 10px 3px; flex-shrink: 0; }
+  #status-bar.fresh { color: #00a855; }
+  #status-bar.error { color: var(--red); }
+  #body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+  #sidebar { width: 128px; min-width: 128px; background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; flex-shrink: 0; }
+  #sidebar .slabel { padding: 8px 10px 4px; font-size: 10px; letter-spacing: .12em; color: var(--muted); font-weight: 700; }
+  #rail { position: relative; padding-left: 20px; }
+  #rail::before { content: ''; position: absolute; left: 11px; top: 8px; bottom: 8px; width: 2px; background: var(--border); border-radius: 1px; }
+  .st-item { display: flex; align-items: center; gap: 6px; padding: 8px 5px 8px 0; cursor: pointer; border-left: 3px solid transparent; transition: background .1s; }
+  .st-item:hover { background: #131e30; }
+  .st-item.active { background: #0c2018; border-left-color: var(--green); }
+  .st-dot { border-radius: 50%; flex-shrink: 0; position: relative; z-index: 1; }
+  .st-name { font-size: 12px; line-height: 1.3; color: var(--muted); font-weight: 500; word-break: break-word; }
+  .st-end .st-name { color: #e0eeff; font-weight: 700; }
+  .st-item.active .st-name { color: #fff; font-weight: 800; }
+  #main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 10px 16px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tab { flex: 1; padding: 8px 4px; border: 2px solid var(--border); cursor: pointer; border-radius: 6px; font-size: 13px; font-weight: 600; background: var(--card); color: var(--muted); transition: all .15s; text-align: center; }
+  .tab.active { background: var(--amber); color: #000; font-weight: 800; border-color: var(--amber); }
+  h2 { font-size: 17px; font-weight: 900; margin-bottom: 3px; }
+  .hint { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  .legend { font-size: 11px; color: #aac8e8; margin-bottom: 10px; padding: 5px 9px; background: var(--card); border-radius: 5px; border: 1px solid var(--border); }
+  .legend .ok { color: var(--amber); font-weight: 700; }
+  .dir-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; margin-top: 2px; }
+  .dir-bar { width: 4px; height: 18px; border-radius: 2px; flex-shrink: 0; }
+  .dir-lbl { font-size: 12px; letter-spacing: .05em; font-weight: 800; }
+  .dir-cnt { font-size: 11px; color: var(--dim); margin-left: auto; }
+  .tbl-wrap { margin-bottom: 18px; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .col-time { width: 22%; } .col-num { width: 15%; } .col-dest { width: 22%; } .col-end { width: 22%; } .col-note { width: 19%; }
+  .rc-num { width: 13%; } .rc-dep { width: 20%; } .rc-arr { width: 20%; } .rc-dur { width: 13%; } .rc-dst { width: 17%; } .rc-note { width: 17%; }
+  th { text-align: left; padding: 6px 5px; font-size: 11px; color: #88bbdd; font-weight: 700; border-bottom: 2px solid var(--border); white-space: nowrap; overflow: hidden; }
+  td { padding: 8px 5px; border-bottom: 1px solid #192840; vertical-align: middle; overflow: hidden; }
+  tr:nth-child(even) td { background: #0c1525; }
+  tr:hover td { background: #132035; }
+  .t-time { font-weight: 800; font-size: 15px; font-family: monospace; color: var(--amber); white-space: nowrap; }
+  .t-time.cancelled { text-decoration: line-through; color: var(--red); }
+  .t-approx { font-size: 9px; color: var(--dim); display: block; margin-top: 1px; }
+  .t-num { color: #fff; font-weight: 800; font-family: monospace; font-size: 13px; }
+  .t-blue { color: var(--blue); font-size: 12px; font-weight: 600; word-break: break-word; }
+  .t-green { color: var(--green); font-size: 12px; font-weight: 600; word-break: break-word; }
+  .t-dur { color: #88ccff; font-size: 12px; font-weight: 600; }
+  .t-note-red { font-size: 11px; font-weight: 700; color: var(--red); line-height: 1.3; word-break: break-word; }
+  .t-note-dash { color: var(--dim); font-size: 12px; }
+  .nodata { padding: 14px 6px; color: var(--dim); font-size: 13px; }
+  .row-cancelled td { opacity: .55; }
+  .route-box { background: var(--card); border: 2px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 14px; }
+  .rlbl { font-size: 11px; letter-spacing: .1em; color: #88aacc; font-weight: 700; margin-bottom: 10px; }
+  .route-row { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+  .sel-wrap { flex: 1; min-width: 100px; }
+  .sel-wrap label { font-size: 11px; color: #aac8e8; display: block; margin-bottom: 4px; font-weight: 700; }
+  select { width: 100%; background: #0d1830; border: 2px solid #2a4060; color: #fff; padding: 7px 8px; border-radius: 5px; font-size: 13px; cursor: pointer; font-weight: 600; }
+  #btn-swap { background: var(--card); border: 2px solid var(--border); color: var(--amber); padding: 7px 11px; border-radius: 5px; cursor: pointer; font-size: 17px; flex-shrink: 0; align-self: flex-end; }
+  .dir-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 800; margin-bottom: 8px; }
+  .badge-m { background: #082010; color: var(--green); border: 2px solid #00e87a55; }
+  .badge-k { background: #080e20; color: var(--blue); border: 2px solid #5bc8ff55; }
+  .route-info { font-size: 12px; color: #aac8e8; font-weight: 600; margin-left: 7px; }
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>🚂 РОЗКЛАД ЕЛЕКТРИЧОК</h1>
+  <div id="date-box">завантаження...</div>
+</div>
+<div id="alert">
+  <span id="alert-text">🔄 Підключення до сервера...</span>
+  <span id="alert-link" onclick="openTG()">📡 УЗ</span>
+</div>
+<div id="status-bar">оновлення даних...</div>
+<div id="body">
+  <div id="sidebar">
+    <div class="slabel">СТАНЦІЇ</div>
+    <div id="rail"></div>
+  </div>
+  <div id="main">
+    <div class="tabs">
+      <button class="tab active" onclick="setMode('st')">📍 По станції</button>
+      <button class="tab" onclick="setMode('rt')">🔀 Маршрут</button>
+    </div>
+    <div id="content"><p class="nodata">⏳ Завантаження розкладу...</p></div>
+  </div>
+</div>
+<script>
+const DATA_JSON_URL = "https://stanislavperec-ua.github.io/merefa-rozklad/data.json";
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+function openTG() { if (tg) tg.openLink("https://t.me/UZprymisky"); else window.open("https://t.me/UZprymisky","_blank"); }
+const DAYS=["неділя","понеділок","вівторок","середа","четвер","п'ятниця","субота"];
+const MONTHS=["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"];
+(function(){const n=new Date();document.getElementById("date-box").textContent=`📅 ${n.getDate()} ${MONTHS[n.getMonth()]} · ${DAYS[n.getDay()]}`;})();
+const STATIONS=["Харків-Пас.","Новоселівка","Липовий Гай","Карачівка","Покотилівка","Науковий","Високий","Зелений Гай","Південний","Комарівка","Артемівка","Мерефа"];
+const OFF=[0,5,10,15,18,22,25,28,31,34,38,43];
+const m2=(h,m)=>h*60+m;
+const hhmm=t=>{if(t==null)return"--:--";const h=Math.floor(Math.round(t)/60)%24,mn=Math.round(t)%60;return`${String(h).padStart(2,"0")}:${String(mn).padStart(2,"0")}`;};
+const dstr=d=>{const h=Math.floor(d/60),m=Math.round(d%60);return h>0?`${h}г ${m}хв`:`${m}хв`;};
+const calcM=(kh,vys)=>{const sc=(vys-kh)/OFF[6];return STATIONS.map((_,i)=>i<=6?Math.round(kh+OFF[i]*sc):Math.round(vys+(OFF[i]-OFF[6])));};
+const calcK=(vys,kh)=>{const sc=(kh-vys)/OFF[6];return STATIONS.map((_,i)=>i<=6?Math.round(vys+(OFF[6]-OFF[i])*sc):Math.round(vys-(OFF[i]-OFF[6])));};
+const C6685=[m2(7,13),m2(7,18),m2(7,23),m2(7,28),m2(7,31),m2(7,35),m2(7,38),m2(7,41),m2(7,44),m2(7,47),m2(7,51),m2(7,56)];
+const BASE_RM=[
+  {num:"6825",dest:"Лозова",kh:m2(6,47),vys:m2(7,8)},
+  {num:"6685",dest:"Берестин",kh:m2(7,13),vys:m2(7,38),stops:C6685},
+  {num:"6513",dest:"Лиманівка",kh:m2(8,40),vys:m2(9,9)},
+  {num:"6687",dest:"Берестин",kh:m2(8,46),vys:m2(9,20)},
+  {num:"6853",dest:"Лиманівка",kh:m2(12,22),vys:m2(12,49)},
+  {num:"6691",dest:"Берестин",kh:m2(13,42),vys:m2(14,7)},
+  {num:"7001",dest:"Лозова",kh:m2(16,0),vys:m2(16,27)},
+  {num:"6525",dest:"Лозова",kh:m2(17,9),vys:m2(17,36)},
+  {num:"6705",dest:"Зміїв",kh:m2(17,17),vys:m2(17,42)},
+  {num:"6693",dest:"Берестин",kh:m2(17,50),vys:m2(18,27)},
+  {num:"6527",dest:"Лозова",kh:m2(18,10),vys:m2(18,38)},
+  {num:"6697",dest:"Берестин",kh:m2(20,22),vys:m2(20,47)},
+  {num:"6529",dest:"Біляївка",kh:m2(20,30),vys:m2(20,57)},
+];
+const BASE_RK=[
+  {num:"6506",orig:"Златопіль",vys:m2(5,58),kh:m2(6,25)},
+  {num:"6682",orig:"Власівка",vys:m2(6,14),kh:m2(6,43)},
+  {num:"6508",orig:"Біляївка",vys:m2(6,44),kh:m2(7,10)},
+  {num:"6684",orig:"Берестин",vys:m2(6,58),kh:m2(7,28)},
+  {num:"6702",orig:"Зміїв",vys:m2(7,18),kh:m2(7,45)},
+  {num:"6512",orig:"Лозова",vys:m2(8,16),kh:m2(8,43)},
+  {num:"6678",orig:"Берестин",vys:m2(9,43),kh:m2(10,9)},
+  {num:"6852",orig:"Лозова",vys:m2(10,34),kh:m2(11,2)},
+  {num:"6686",orig:"Берестин",vys:m2(11,1),kh:m2(11,27)},
+  {num:"6516",orig:"Лозова",vys:m2(12,3),kh:m2(12,31)},
+  {num:"6688",orig:"Берестин",vys:m2(13,3),kh:m2(13,35)},
+  {num:"6690",orig:"Берестин",vys:m2(16,7),kh:m2(16,35)},
+  {num:"6524",orig:"Лиманівка",vys:m2(18,53),kh:m2(19,21)},
+  {num:"6694",orig:"Берестин",vys:m2(19,24),kh:m2(19,46)},
+  {num:"6856",orig:"Лиманівка",vys:m2(20,38),kh:m2(21,2)},
+];
+let NOTES={};
+async function loadData(){
+  const statusEl=document.getElementById("status-bar");
+  const alertEl=document.getElementById("alert-text");
+  const alertDiv=document.getElementById("alert");
+  try{
+    const resp=await fetch(DATA_JSON_URL+"?t="+Date.now(),{cache:"no-store"});
+    if(!resp.ok)throw new Error("HTTP "+resp.status);
+    const data=await resp.json();
+    NOTES={};
+    (data.notes||[]).forEach(n=>{NOTES[n.num]=n;});
+    if(data.alert){alertDiv.className="";alertEl.innerHTML=`<b>⚠</b> ${data.alert}`;}
+    else{alertDiv.className="ok";alertEl.innerHTML=`<b>✓</b> Змін немає. Розклад актуальний.`;}
+    if(data.updated){const d=new Date(data.updated);statusEl.textContent=`✓ Оновлено: ${d.getDate()} ${MONTHS[d.getMonth()]} о ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;statusEl.className="fresh";}
+  }catch(e){
+    NOTES={"6686":{cancelled:true,note:"❌ Скасовано"},"6684":{cancelled:false,note:"⚠ До Водолаги"}};
+    alertDiv.className="";alertEl.innerHTML=`<b>⚠ Офлайн-режим.</b> Показано кешований розклад.`;
+    statusEl.textContent="⚠ Немає з'єднання із сервером";statusEl.className="error";
+  }
+  buildSidebar();renderContent();
+}
+function buildTrains(){
+  const TM=BASE_RM.map(t=>{const n=NOTES[t.num]||{};return{...t,dir:"m",times:t.stops||calcM(t.kh,t.vys),anch:!!t.stops,cancelled:!!n.cancelled,note:n.note||""};});
+  const TK=BASE_RK.map(t=>{const n=NOTES[t.num]||{};return{...t,dir:"k",times:calcK(t.vys,t.kh),cancelled:!!n.cancelled,note:n.note||""};});
+  return{TM,TK};
+}
+const isAnch=(dir,si,t)=>dir==="k"?(si===0||si===6):(si===0||si===6||t.anch);
+let mode="st",sel=6,fr=6,to=0;
+function buildSidebar(){
+  const rail=document.getElementById("rail");rail.innerHTML="";
+  STATIONS.forEach((name,i)=>{
+    const isEnd=i===0||i===11,act=mode==="st"&&sel===i;
+    const div=document.createElement("div");
+    div.className="st-item"+(act?" active":"")+(isEnd?" st-end":"");
+    div.onclick=()=>{sel=i;mode="st";buildSidebar();renderContent();document.querySelectorAll(".tab").forEach((t,ti)=>t.classList.toggle("active",ti===0));};
+    const ds=isEnd?12:8;
+    const dot=document.createElement("div");dot.className="st-dot";
+    dot.style.cssText=`width:${ds}px;height:${ds}px;margin-left:${isEnd?-6:-4}px;background:${act?"#00ff88":isEnd?"#ffd700":"#253550"};border:2px solid ${act?"#00ff88":isEnd?"#ffd700":"#3a5570"};${act?"box-shadow:0 0 7px #00ff88":isEnd?"box-shadow:0 0 5px #ffd70077":""}`;
+    const span=document.createElement("span");span.className="st-name";span.textContent=name;
+    div.appendChild(dot);div.appendChild(span);rail.appendChild(div);
+  });
+}
+function noteCell(t){if(!t.note)return'<span class="t-note-dash">—</span>';return`<span class="t-note-red">${t.note}</span>`;}
+function timeCell(t,si,dir){const ok=isAnch(dir,si,t);let html=`<span class="t-time${t.cancelled?" cancelled":""}">${ok?"★":"~"}${hhmm(t.time)}</span>`;if(!ok&&!t.cancelled)html+=`<span class="t-approx">±3хв</span>`;return html;}
+function renderContent(){
+  const{TM,TK}=buildTrains();const c=document.getElementById("content");
+  if(mode==="st"){
+    const stK=TK.map(t=>({...t,time:t.times[sel]})).sort((a,b)=>a.time-b.time);
+    const stM=TM.map(t=>({...t,time:t.times[sel]})).sort((a,b)=>a.time-b.time);
+    let html=`<h2>${STATIONS[sel]}</h2><p class="hint">Оберіть станцію в меню зліва</p><div class="legend"><span class="ok">★</span> = дані УЗ &nbsp;·&nbsp;<b>~</b> = розрахунок (±3 хв)</div>`;
+    if(sel>0){
+      html+=`<div class="dir-head"><div class="dir-bar" style="background:#5bc8ff"></div><span class="dir-lbl" style="color:#5bc8ff">→ НА ХАРКІВ-ПАС.</span><span class="dir-cnt">${stK.length} рейс.</span></div><div class="tbl-wrap"><table><colgroup><col class="col-time"><col class="col-num"><col class="col-dest"><col class="col-end"><col class="col-note"></colgroup><thead><tr><th>Відправл.</th><th>№</th><th>Звідки</th><th>Харків</th><th>Прим.</th></tr></thead><tbody>`;
+      stK.forEach(t=>{html+=`<tr${t.cancelled?' class="row-cancelled"':''}><td>${timeCell(t,sel,"k")}</td><td><span class="t-num">${t.num}</span></td><td><span class="t-blue">${t.orig}</span></td><td><span class="t-time${t.cancelled?" cancelled":""}">★${hhmm(t.kh)}</span></td><td>${noteCell(t)}</td></tr>`;});
+      html+=`</tbody></table></div>`;
+    }
+    if(sel<11){
+      html+=`<div class="dir-head"><div class="dir-bar" style="background:#00e87a"></div><span class="dir-lbl" style="color:#00e87a">→ НА МЕРЕФУ</span><span class="dir-cnt">${stM.length} рейс.</span></div><div class="tbl-wrap"><table><colgroup><col class="col-time"><col class="col-num"><col class="col-dest"><col class="col-end"><col class="col-note"></colgroup><thead><tr><th>Відправл.</th><th>№</th><th>Кінцева</th><th>Мерефа</th><th>Прим.</th></tr></thead><tbody>`;
+      stM.forEach(t=>{html+=`<tr${t.cancelled?' class="row-cancelled"':''}><td>${timeCell(t,sel,"m")}</td><td><span class="t-num">${t.num}</span></td><td><span class="t-green">${t.dest}</span></td><td><span class="t-time${t.cancelled?" cancelled":""}">${t.anch?"★":"~"}${hhmm(t.times[11])}</span></td><td>${noteCell(t)}</td></tr>`;});
+      html+=`</tbody></table></div>`;
+    }
+    c.innerHTML=html;
+  }else{
+    const opts1=STATIONS.map((n,i)=>`<option value="${i}"${i===fr?" selected":""}>${n}</option>`).join("");
+    const opts2=STATIONS.map((n,i)=>`<option value="${i}"${i===to?" selected":""}>${n}</option>`).join("");
+    let html=`<div class="route-box"><div class="rlbl">ОБЕРІТЬ МАРШРУТ</div><div class="route-row"><div class="sel-wrap"><label>ВІД</label><select onchange="fr=+this.value;renderContent()">${opts1}</select></div><button id="btn-swap" onclick="let t=fr;fr=to;to=t;renderContent()">⇄</button><div class="sel-wrap"><label>ДО</label><select onchange="to=+this.value;renderContent()">${opts2}</select></div></div></div>`;
+    if(fr===to){html+=`<p class="nodata">Оберіть різні станції</p>`;}
+    else{
+      const going=fr<to;
+      const rd=(going?TM:TK).filter(t=>t.times[fr]!=null&&t.times[to]!=null).map(t=>({...t,dep:t.times[fr],arr:t.times[to],dur:t.times[to]-t.times[fr]})).sort((a,b)=>a.dep-b.dep);
+      html+=`<div style="margin-bottom:10px"><span class="dir-badge ${going?"badge-m":"badge-k"}">${going?"→ МЕРЕФА":"→ ХАРКІВ"}</span><span class="route-info">${STATIONS[fr]} → ${STATIONS[to]}</span></div><div class="tbl-wrap"><table><colgroup><col class="rc-num"><col class="rc-dep"><col class="rc-arr"><col class="rc-dur"><col class="rc-dst"><col class="rc-note"></colgroup><thead><tr><th>№</th><th>Відпр.</th><th>Приб.</th><th>Час</th><th>${going?"Кінцева":"Звідки"}</th><th>Прим.</th></tr></thead><tbody>`;
+      if(!rd.length){html+=`<tr><td colspan="6" class="nodata">Немає рейсів</td></tr>`;}
+      else{rd.forEach(t=>{const dk=isAnch(t.dir,fr,t),ak=isAnch(t.dir,to,t);html+=`<tr${t.cancelled?' class="row-cancelled"':''}><td><span class="t-num">${t.num}</span></td><td><span class="t-time${t.cancelled?" cancelled":""}">${dk?"★":"~"}${hhmm(t.dep)}</span>${!dk&&!t.cancelled?'<span class="t-approx">±3хв</span>':''}</td><td><span class="t-time${t.cancelled?" cancelled":""}">${ak?"★":"~"}${hhmm(t.arr)}</span>${!ak&&!t.cancelled?'<span class="t-approx">±3хв</span>':''}</td><td><span class="t-dur">${dstr(t.dur)}</span></td><td><span class="${going?"t-green":"t-blue"}">${going?t.dest:t.orig}</span></td><td>${noteCell(t)}</td></tr>`;});}
+      html+=`</tbody></table></div>`;
+    }
+    c.innerHTML=html;
+  }
+}
+function setMode(m){mode=m;document.querySelectorAll(".tab").forEach((t,i)=>t.classList.toggle("active",(m==="st"&&i===0)||(m==="rt"&&i===1)));buildSidebar();renderContent();}
+loadData();
+</script>
+</body>
+</html>
