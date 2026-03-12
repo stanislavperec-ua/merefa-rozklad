@@ -59,6 +59,100 @@
     font-weight: 700;
     font-family: monospace;
     white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: background .15s;
+  }
+  #date-box:hover { background: #162040; border-color: var(--amber); }
+
+  /* DATE PICKER OVERLAY */
+  #date-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    z-index: 100;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 60px;
+  }
+  #date-overlay.open { display: flex; }
+  #date-picker-box {
+    background: #111c2e;
+    border: 2px solid var(--amber);
+    border-radius: 10px;
+    padding: 16px;
+    width: 290px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.7);
+  }
+  #date-picker-box h3 {
+    color: var(--amber);
+    font-size: 13px;
+    font-weight: 900;
+    margin-bottom: 12px;
+    text-align: center;
+    font-family: monospace;
+  }
+  .dpicker-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+  .dpicker-day-hdr {
+    text-align: center;
+    font-size: 10px;
+    color: var(--muted);
+    font-weight: 700;
+    padding: 2px 0;
+  }
+  .dpicker-day {
+    text-align: center;
+    padding: 7px 2px;
+    border-radius: 5px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #cce;
+    border: 1px solid transparent;
+    transition: background .1s;
+  }
+  .dpicker-day:hover { background: #1a2e48; }
+  .dpicker-day.today { border-color: var(--amber); color: var(--amber); }
+  .dpicker-day.selected { background: var(--amber); color: #000; font-weight: 900; }
+  .dpicker-day.other-month { color: #3a5570; }
+  .dpicker-day.empty { cursor: default; }
+  .dpicker-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .dpicker-nav button {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--amber);
+    padding: 5px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 15px;
+  }
+  .dpicker-nav span {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: monospace;
+  }
+  #dp-close {
+    width: 100%;
+    background: #1a2e48;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 13px;
+    margin-top: 4px;
   }
 
   /* ALERT */
@@ -280,7 +374,21 @@
 
 <div id="header">
   <h1>🚂 РОЗКЛАД ЕЛЕКТРИЧОК</h1>
-  <div id="date-box">завантаження...</div>
+  <div id="date-box" onclick="openDatePicker()">завантаження...</div>
+</div>
+
+<!-- DATE PICKER OVERLAY -->
+<div id="date-overlay" onclick="closeDatePickerOutside(event)">
+  <div id="date-picker-box">
+    <h3>📅 ОБЕРІТЬ ДАТУ</h3>
+    <div class="dpicker-nav">
+      <button onclick="dpMonth(-1)">&#8249;</button>
+      <span id="dp-month-label"></span>
+      <button onclick="dpMonth(+1)">&#8250;</button>
+    </div>
+    <div class="dpicker-days" id="dp-days"></div>
+    <button id="dp-close" onclick="closeDatePicker()">Скасувати</button>
+  </div>
 </div>
 
 <div id="alert">
@@ -324,11 +432,115 @@ function openTG() {
 // ── Дата ────────────────────────────────────────────────
 const DAYS   = ["неділя","понеділок","вівторок","середа","четвер","п'ятниця","субота"];
 const MONTHS = ["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"];
-(function() {
-  const n = new Date();
-  document.getElementById("date-box").textContent =
-    `📅 ${n.getDate()} ${MONTHS[n.getMonth()]} · ${DAYS[n.getDay()]}`;
-})();
+const MONTHS_NOM = ["Січень","Лютий","Березень","Квітень","Травень","Червень","Липень","Серпень","Вересень","Жовтень","Листопад","Грудень"];
+
+// Поточна вибрана дата (за замовчуванням — сьогодні)
+let selectedDate = new Date();
+selectedDate.setHours(0,0,0,0);
+
+function formatDateBox(d) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((d - today) / 86400000);
+  let prefix = "";
+  if (diff === 0) prefix = "Сьогодні · ";
+  else if (diff === 1) prefix = "Завтра · ";
+  else if (diff === -1) prefix = "Вчора · ";
+  return `📅 ${prefix}${d.getDate()} ${MONTHS[d.getMonth()]} · ${DAYS[d.getDay()]}`;
+}
+
+function updateDateBox() {
+  document.getElementById("date-box").textContent = formatDateBox(selectedDate);
+}
+updateDateBox();
+
+// ── Date Picker ─────────────────────────────────────────
+let dpViewYear, dpViewMonth;
+
+function openDatePicker() {
+  const now = new Date();
+  dpViewYear  = now.getFullYear();
+  dpViewMonth = now.getMonth();
+  renderDpCalendar();
+  document.getElementById("date-overlay").classList.add("open");
+}
+
+function closeDatePicker() {
+  document.getElementById("date-overlay").classList.remove("open");
+}
+
+function closeDatePickerOutside(e) {
+  if (e.target === document.getElementById("date-overlay")) closeDatePicker();
+}
+
+function dpMonth(dir) {
+  dpViewMonth += dir;
+  if (dpViewMonth > 11) { dpViewMonth = 0; dpViewYear++; }
+  if (dpViewMonth < 0)  { dpViewMonth = 11; dpViewYear--; }
+  renderDpCalendar();
+}
+
+function renderDpCalendar() {
+  document.getElementById("dp-month-label").textContent =
+    MONTHS_NOM[dpViewMonth] + " " + dpViewYear;
+
+  const container = document.getElementById("dp-days");
+  container.innerHTML = "";
+
+  // Заголовки днів тижня (пн-нд)
+  ["Пн","Вт","Ср","Чт","Пт","Сб","Нд"].forEach(d => {
+    const el = document.createElement("div");
+    el.className = "dpicker-day-hdr";
+    el.textContent = d;
+    container.appendChild(el);
+  });
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const firstDay = new Date(dpViewYear, dpViewMonth, 1);
+  // Зміщення: пн=0, вт=1... нд=6
+  let startOffset = firstDay.getDay() - 1;
+  if (startOffset < 0) startOffset = 6;
+
+  const daysInMonth = new Date(dpViewYear, dpViewMonth+1, 0).getDate();
+  const daysInPrev  = new Date(dpViewYear, dpViewMonth,   0).getDate();
+
+  // Попередній місяць
+  for (let i = startOffset - 1; i >= 0; i--) {
+    const el = document.createElement("div");
+    el.className = "dpicker-day other-month";
+    el.textContent = daysInPrev - i;
+    container.appendChild(el);
+  }
+
+  // Поточний місяць
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(dpViewYear, dpViewMonth, d);
+    const el = document.createElement("div");
+    el.className = "dpicker-day";
+    if (date.getTime() === today.getTime()) el.classList.add("today");
+    if (date.getTime() === selectedDate.getTime()) el.classList.add("selected");
+    el.textContent = d;
+    el.onclick = () => selectDate(date);
+    container.appendChild(el);
+  }
+
+  // Наступний місяць (заповнюємо до повного тижня)
+  const total = startOffset + daysInMonth;
+  const remainder = total % 7 === 0 ? 0 : 7 - (total % 7);
+  for (let d = 1; d <= remainder; d++) {
+    const el = document.createElement("div");
+    el.className = "dpicker-day other-month";
+    el.textContent = d;
+    container.appendChild(el);
+  }
+}
+
+function selectDate(date) {
+  selectedDate = new Date(date);
+  selectedDate.setHours(0,0,0,0);
+  updateDateBox();
+  closeDatePicker();
+  renderContent(); // перемалювати розклад (скасування можуть відрізнятись)
+}
 
 // ── Розклад (базові дані) ────────────────────────────────
 const STATIONS = [
@@ -374,17 +586,17 @@ const C6685 = [
 const BASE_RM = [
   {num:"6825", dest:"Лозова",    kh:m2(6,47),  vys:m2(7,8)},
   {num:"6685", dest:"Берестин",  kh:m2(7,13),  vys:m2(7,38), stops:C6685},
-  {num:"6513", dest:"Лиманівка", kh:m2(8,40),  vys:m2(9,9)},
+  {num:"6513",mist:572, dest:"Лиманівка", kh:m2(8,40),  vys:m2(9,9)},
   {num:"6687", dest:"Берестин",  kh:m2(8,46),  vys:m2(9,20)},
-  {num:"6853", dest:"Лиманівка", kh:m2(12,22), vys:m2(12,49)},
+  {num:"6853",mist:794, dest:"Лиманівка", kh:m2(12,22), vys:m2(12,49)},
   {num:"6691", dest:"Берестин",  kh:m2(13,42), vys:m2(14,7)},
-  {num:"7001", dest:"Лозова",    kh:m2(16,0),  vys:m2(16,27)},
-  {num:"6525", dest:"Лозова",    kh:m2(17,9),  vys:m2(17,36)},
+  {num:"7001",mist:1011, dest:"Лозова",    kh:m2(16,0),  vys:m2(16,27)},
+  {num:"6525",mist:1081, dest:"Лозова",    kh:m2(17,9),  vys:m2(17,36)},
   {num:"6705", dest:"Зміїв",     kh:m2(17,17), vys:m2(17,42)},
   {num:"6693", dest:"Берестин",  kh:m2(17,50), vys:m2(18,27)},
-  {num:"6527", dest:"Лозова",    kh:m2(18,10), vys:m2(18,38)},
+  {num:"6527",mist:1144, dest:"Лозова",    kh:m2(18,10), vys:m2(18,38)},
   {num:"6697", dest:"Берестин",  kh:m2(20,22), vys:m2(20,47)},
-  {num:"6529", dest:"Біляївка",  kh:m2(20,30), vys:m2(20,57)},
+  {num:"6529",mist:1282, dest:"Біляївка",  kh:m2(20,30), vys:m2(20,57)},
 ];
 
 // Базовий розклад → Харків
@@ -704,6 +916,7 @@ loadData();
 </script>
 </body>
 </html>
+
 
 
 
