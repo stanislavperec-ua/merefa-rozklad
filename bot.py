@@ -1,9 +1,12 @@
 import os
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BotCommand
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 BOT_TOKEN = os.environ.get(“BOT_TOKEN”, “”)
 MINIAPP_URL = “https://stanislavperec-ua.github.io/merefa-rozklad/”
+PORT = int(os.environ.get(“PORT”, 8080))
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -56,7 +59,22 @@ BotCommand(”/start”, “Holovne menu”),
 ])
 print(“Bot nalashtvovano”)
 
+class HealthHandler(BaseHTTPRequestHandler):
+def do_GET(self):
+self.send_response(200)
+self.end_headers()
+self.wfile.write(b”OK”)
+def log_message(self, format, *args):
+pass
+
+def run_web():
+server = HTTPServer((“0.0.0.0”, PORT), HealthHandler)
+print(f”Web server on port {PORT}”)
+server.serve_forever()
+
 if **name** == “**main**”:
 print(“Bot zapushcheno…”)
 setup()
+t = threading.Thread(target=run_web, daemon=True)
+t.start()
 bot.infinity_polling(timeout=30)
