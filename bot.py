@@ -1,4 +1,5 @@
 import os
+import time
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BotCommand
 import threading
@@ -76,7 +77,9 @@ def run_web():
 
 if __name__ == '__main__':
     print('Bot zapushcheno...')
+    print('Ochikuvannya 10 sekund...')
+    time.sleep(10)
     setup()
     t = threading.Thread(target=run_web, daemon=True)
     t.start()
-    bot.infinity_polling(timeout=30)
+    bot.infinity_polling(timeout=30, skip_pending=True)
