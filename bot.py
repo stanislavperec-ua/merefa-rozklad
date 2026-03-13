@@ -6,7 +6,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '')
 MINIAPP_URL = 'https://stanislavperec-ua.github.io/merefa-rozklad/'
-PORT = int(os.environ.get('PORT', 8080))
+PORT = int(os.environ.get('PORT', 10000))
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
