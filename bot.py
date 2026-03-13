@@ -76,10 +76,9 @@ def run_web():
     server.serve_forever()
 
 if __name__ == '__main__':
-    print('Bot zapushcheno...')
-    print('Ochikuvannya 10 sekund...')
-    time.sleep(10)
-    setup()
+    print('Bot zapushcheno, ochikuvannya 30 sekund...')
     t = threading.Thread(target=run_web, daemon=True)
     t.start()
-    bot.infinity_polling(timeout=30, skip_pending=True)
+    time.sleep(30)
+    setup()
+    bot.infinity_polling(timeout=30)
