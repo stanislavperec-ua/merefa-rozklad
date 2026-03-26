@@ -1,15 +1,18 @@
 import os
+import threading
+import time
+import requests as req
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BotCommand
 from flask import Flask, request, abort
- 
+
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '')
 RENDER_URL = os.environ.get('RENDER_URL', 'https://merefa-rozklad.onrender.com')
 PORT = int(os.environ.get('PORT', 10000))
- 
+
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
- 
+
 WARNING = (
     '\u26a0\ufe0f УВАГА \u26a0\ufe0f\n\n'
     '\u2757 Цей бот НЕ є офіційним інструментом Укрзалізниці. '
@@ -18,7 +21,18 @@ WARNING = (
     'інформації на офіційному сайті УЗ, хоча намагається знаходити її з різних джерел.\n\n'
     '\U0001f50d Завжди перевіряйте наявність поїздів на офіційних ресурсах перед поїздкою!'
 )
- 
+
+def keep_alive():
+    while True:
+        time.sleep(180)
+        try:
+            req.get(RENDER_URL)
+            print("Self-ping OK")
+        except Exception as e:
+            print(f"Self-ping failed: {e}")
+
+threading.Thread(target=keep_alive, daemon=True).start()
+
 def webapp_button():
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton(
@@ -26,7 +40,7 @@ def webapp_button():
         web_app=WebAppInfo(url='https://stanislavperec-ua.github.io/merefa-rozklad/')
     ))
     return kb
- 
+
 def send_rozklad(chat_id):
     bot.send_message(chat_id, WARNING)
     bot.send_message(
@@ -34,19 +48,19 @@ def send_rozklad(chat_id):
         'Rozklad elektrichok Kharkiv - Merefa',
         reply_markup=webapp_button()
     )
- 
+
 @bot.message_handler(commands=['start', 'rozklad'])
 def cmd_handler(message):
     send_rozklad(message.chat.id)
- 
+
 @bot.message_handler(func=lambda m: True)
 def fallback(message):
     send_rozklad(message.chat.id)
- 
+
 @app.route('/')
 def index():
     return 'OK', 200
- 
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
@@ -54,7 +68,7 @@ def webhook():
         bot.process_new_updates([update])
         return '', 200
     abort(403)
- 
+
 def setup():
     bot.remove_webhook()
     bot.set_webhook(url=f'{RENDER_URL}/webhook')
@@ -63,7 +77,7 @@ def setup():
         BotCommand('/start', 'Holovne menu'),
     ])
     print(f'Webhook vstanovleno: {RENDER_URL}/webhook')
- 
+
 if __name__ == '__main__':
     setup()
     app.run(host='0.0.0.0', port=PORT)
