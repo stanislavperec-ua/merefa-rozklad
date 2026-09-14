@@ -167,7 +167,8 @@ class Client:
             try:
                 if self.requests_made:
                     time.sleep(self.pause)
-                r = self.session.get(BASE_URL, params=params, timeout=REQUEST_TIMEOUT)
+                # (connect, read): сайт УЗ не відповідає з хмарних мереж (AWS, Azure), тож з'єднання чекаємо недовго
+                r = self.session.get(BASE_URL, params=params, timeout=(20, REQUEST_TIMEOUT))
                 self.requests_made += 1
                 r.raise_for_status()
                 r.encoding = "utf-8"

@@ -44,13 +44,18 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests
 
-      # Якщо сайт УЗ недоступний з раннера, крок падає, але live.json нижче все одно оновлюється.
+      # swrailway.gov.ua не відповідає з хмарних мереж (GitHub Actions, Render), тому цей крок
+      # виконується лише якщо задано секрет UZ_PROXY (HTTPS-проксі з українським/незаблокованим IP,
+      # наприклад Apify Proxy: http://groups-RESIDENTIAL,country-UA:<token>@proxy.apify.com:8000)
+      # або при ручному запуску з force. Без проксі розклад оновлюється з ПК: update_schedule.cmd.
       - name: Official timetable (swrailway.gov.ua)
         id: timetable
+        if: ${{ inputs.force || secrets.UZ_PROXY != '' }}
         continue-on-error: true
         env:
           FORCE: ${{ inputs.force }}
           REFRESH: ${{ inputs.refresh_cache }}
+          HTTPS_PROXY: ${{ secrets.UZ_PROXY }}
         run: |
           ARGS="--max-age-hours 4"
           [ "$FORCE" = "true" ] && ARGS="$ARGS --force"

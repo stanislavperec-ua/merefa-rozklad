@@ -727,7 +727,7 @@ function renderBanner(key, res) {
 
   const schedAge = ageHours(S.generated);
   statusEl.textContent = `Розклад УЗ: ${fmtStamp(S.generated)} · канал УЗ: ${L?.generated ? fmtStamp(L.generated) : "н/д"}`;
-  statusEl.className = offline ? "error" : schedAge > 12 ? "stale" : "fresh";
+  statusEl.className = offline ? "error" : schedAge > 36 ? "stale" : "fresh";
 
   const cnt = document.getElementById("chg-cnt");
   const n = cancelled.length + delays.length;
