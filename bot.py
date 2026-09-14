@@ -329,6 +329,20 @@ def index():
     return "OK", 200
 
 
+@app.route("/uzcheck")
+def uzcheck():
+    """Діагностика: чи доступний сайт УЗ з цього хостингу (GitHub Actions його не бачить)."""
+    started = time.time()
+    try:
+        r = req.get(uz.BASE_URL, params={"sid1": uz.KHARKIV_SID, "sid2": uz.MEREFA_SID, "dateR": 0},
+                    headers={"User-Agent": uz.USER_AGENT}, timeout=20)
+        rows = uz.parse_pair_list(r.text) if r.ok else []
+        return {"ok": r.ok and bool(rows), "status": r.status_code, "trains": len(rows),
+                "seconds": round(time.time() - started, 1)}, 200
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)[:300], "seconds": round(time.time() - started, 1)}, 200
+
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     if WEBHOOK_SECRET and request.headers.get("X-Telegram-Bot-Api-Secret-Token") != WEBHOOK_SECRET:

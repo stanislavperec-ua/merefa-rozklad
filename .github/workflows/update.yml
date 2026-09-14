@@ -44,7 +44,10 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests
 
+      # Якщо сайт УЗ недоступний з раннера, крок падає, але live.json нижче все одно оновлюється.
       - name: Official timetable (swrailway.gov.ua)
+        id: timetable
+        continue-on-error: true
         env:
           FORCE: ${{ inputs.force }}
           REFRESH: ${{ inputs.refresh_cache }}
@@ -56,6 +59,10 @@ jobs:
 
       - name: Live channel messages (t.me/UZprymisky)
         run: python build_live.py
+
+      - name: Report timetable failure
+        if: steps.timetable.outcome == 'failure'
+        run: echo "::warning::Розклад УЗ не оновлено (сайт недоступний з раннера), live.json оновлено"
 
       - name: Commit and push
         run: |
