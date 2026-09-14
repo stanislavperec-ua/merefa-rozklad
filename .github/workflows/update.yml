@@ -59,7 +59,7 @@ jobs:
           REFRESH: ${{ inputs.refresh_cache }}
           HTTPS_PROXY: ${{ env.UZ_PROXY }}
         run: |
-          ARGS="--max-age-hours 4"
+          ARGS="--max-age-hours 6"
           [ "$FORCE" = "true" ] && ARGS="$ARGS --force"
           [ "$REFRESH" = "true" ] && ARGS="$ARGS --refresh-cache"
           python build_schedule.py $ARGS

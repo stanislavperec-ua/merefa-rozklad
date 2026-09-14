@@ -30,17 +30,23 @@ Telegram ─► webhook ─► Render (bot.py): кнопка Mini App, /next, /z
 | `bot.py` | Telegram-бот (Flask + pyTelegramBotAPI) |
 | `tests/` | юніт-тести парсера на збережених сторінках УЗ |
 
-## Важливо: сайт УЗ не відповідає з хмарних мереж
+## Важливо: сайт УЗ відповідає лише з українських адрес
 
-swrailway.gov.ua відкидає з'єднання з GitHub Actions і Render (TCP timeout), але відкривається
-з домашніх мереж в Україні. Тому:
+swrailway.gov.ua і uz.gov.ua не приймають з'єднання з-за кордону (гео-блокування: GitHub Actions,
+Render, Google, інші хмари отримують TCP timeout), але відкриваються з будь-якої мережі в Україні.
+Тому крок розкладу в GitHub Actions ходить на сайт через резидентний проксі з українським IP:
 
-* `live.json` (канал УЗ) оновлюється автоматично з GitHub Actions щопівгодини;
-* `schedule.json` (офіційний розклад) оновлюється **з ПК** подвійним кліком по `update_schedule.cmd`
-  (збирає розклад на 14 днів, робить коміт і push; застосунок підхоплює за 1-2 хв). Достатньо
-  раз на кілька днів або коли УЗ анонсує зміни;
-* якщо є HTTPS-проксі з незаблокованим IP, додайте секрет репозиторію `UZ_PROXY`
-  (`http://user:pass@host:port`), і крок розкладу в Actions запрацює автоматично.
+1. Apify (є безкоштовний тариф з кредитом $5/міс; резидентний трафік $8/ГБ, прогін ≈ 1 МБ,
+   4 прогони на добу ≈ 120 МБ/міс ≈ $1): Settings → API & Integrations → скопіювати Personal API token.
+2. У репозиторії: Settings → Secrets and variables → Actions → New repository secret:
+   ім'я `UZ_PROXY`, значення
+   `http://groups-RESIDENTIAL,country-UA:<APIFY_TOKEN>@proxy.apify.com:8000`
+3. Actions → «Diag network» → Run workflow: у логу має бути `proxy egress ip: ... (UA)` і `HTTP 200 ... eltrain=2`.
+4. Actions → «Update schedule data» → Run workflow з force. Далі все автоматично: розклад не
+   частіше ніж раз на 6 годин, канал щопівгодини.
+
+Без секрету крок розкладу пропускається, а `schedule.json` можна оновити з ПК в Україні
+подвійним кліком по `update_schedule.cmd` (запасний шлях).
 
 ## Локальний запуск
 

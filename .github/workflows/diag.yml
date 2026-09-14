@@ -1,22 +1,27 @@
 name: Diag network
+# Ручна діагностика: чи доступні хости УЗ з раннера GitHub напряму і через проксі з секрету UZ_PROXY.
 on:
   workflow_dispatch:
 jobs:
   diag:
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    env:
+      UZ_PROXY: ${{ secrets.UZ_PROXY }}
     steps:
       - name: Probe hosts from the GitHub runner
         run: |
-          probe() { printf '%-70s ' "$1"; curl -s -o /tmp/b -m 20 -A "Mozilla/5.0" -w "HTTP %{http_code} in %{time_total}s bytes %{size_download}" "$1" || printf 'FAIL(curl %s)' "$?"; echo " | eltrain=$(grep -c -E 'ElTrain|6685' /tmp/b 2>/dev/null)"; }
+          probe() { printf '%-60s ' "$1"; curl -s -o /tmp/b -m 25 -A "Mozilla/5.0" "${@:2}" -w "HTTP %{http_code} in %{time_total}s bytes %{size_download}" "$1" || printf 'FAIL(curl %s)' "$?"; echo " | eltrain=$(grep -c -E 'ElTrain|6685' /tmp/b 2>/dev/null)"; }
+          UZ="https://swrailway.gov.ua/timetable/eltrain/?sid1=2528&sid2=2538&dateR=0"
           echo "runner egress ip: $(curl -s -m 10 https://api.ipify.org)"
-          probe "https://swrailway.gov.ua/timetable/eltrain/?sid1=2528&sid2=2538&dateR=0"
-          probe "http://swrailway.gov.ua/timetable/eltrain/?sid1=2528&sid2=2538&dateR=0"
+          echo "--- direct ---"
+          probe "$UZ"
           probe "https://www.uz.gov.ua/"
-          probe "https://app.uz.gov.ua/api/stations?search=%D0%9C%D0%B5%D1%80%D0%B5%D1%84%D0%B0"
-          probe "https://booking.uz.gov.ua/"
           probe "https://www.pz.gov.ua/"
-          probe "https://test.cors.workers.dev/?https://swrailway.gov.ua/timetable/eltrain/?sid1=2528&sid2=2538&dateR=0"
-          probe "https://r.jina.ai/https://swrailway.gov.ua/timetable/eltrain/?sid1=2528&sid2=2538&dateR=0"
-          echo "--- dns ---"; getent hosts swrailway.gov.ua || true
-          echo "--- traceroute-ish (tcp 443, 5 hops) ---"; timeout 40 traceroute -T -p 443 -m 8 swrailway.gov.ua 2>&1 | head -12 || true
+          if [ -n "$UZ_PROXY" ]; then
+            echo "--- via UZ_PROXY ---"
+            echo "proxy egress ip: $(curl -s -m 30 -x "$UZ_PROXY" https://api.ipify.org) ($(curl -s -m 30 -x "$UZ_PROXY" https://ipinfo.io/country))"
+            probe "$UZ" -x "$UZ_PROXY"
+          else
+            echo "--- UZ_PROXY secret is not set: skipping proxy probe ---"
+          fi
