@@ -11,7 +11,7 @@ Telegram Mini App і бот з розкладом приміських елек�
 
 ```
 GitHub Actions (щопівгодини)
-  ├─ build_schedule.py  ──► schedule.json  (офіційний розклад УЗ на 14 днів; збирається о 06:00 і 12:00 за Києвом)
+  ├─ build_schedule.py  ──► schedule.json  (офіційний розклад УЗ на 14 днів; збирається о 06:00, 10:00 і 13:00 за Києвом)
   └─ build_live.py      ──► live.json      (канал УЗ: затримки / скасування за останні 12 год)
                                  │ commit у main
                                  ▼
@@ -35,24 +35,37 @@ Telegram ─► webhook ─► Render (bot.py): кнопка Mini App, /next, /z
 
 Перевірка з 25 вузлів світу (check-host.net) показала: swrailway.gov.ua приймає з'єднання
 з Європи (Нідерланди, Фінляндія, Австрія, Британія, Молдова, Україна), але мовчить для США,
-Канади, Азії та РФ. GitHub Actions і Render працюють у США, тому прямий запит там падає.
+Канади, Азії та РФ. GitHub Actions і Render у США отримують TCP timeout. Публічні CORS-шлюзи
+теж не рятують: єдиний робочий (api.cors.lol) блокує вже після десятка запитів.
 
-Тому `uz.Client` ходить на сайт через шлюз у Європі (перелік у `uz.GATEWAYS`, зараз
-api.cors.lol і резервні). Маршрути пробуються по черзі: прямий, далі кожен шлюз; той, що
-спрацював, використовується першим до кінця прогону. З ПК в Україні працює прямий маршрут,
-тому шлюзи там навіть не задіюються.
+Тому розклад збирає **gateway.py на Render у регіоні Frankfurt**: для нього сайт УЗ доступний
+напряму. Сервіс уміє:
 
-**Якщо публічні шлюзи почнуть відмовляти** (у них є ліміт запитів), підніміть власний
-безкоштовно за 5 хвилин: `gateway.py` розгортається на Render як Web Service у регіоні
-**Frankfurt** (Build: `pip install -r requirements.txt`, Start:
-`gunicorn gateway:app --bind 0.0.0.0:$PORT --timeout 120`, змінна `GATEWAY_TOKEN` за бажанням).
-Далі додайте секрет репозиторію `UZ_GATEWAYS` зі значенням
-`https://<ваш-сервіс>.onrender.com/fetch?token=<GATEWAY_TOKEN>&url={url}` (кілька шлюзів
-через кому). Скрипт підставляє адресу сторінки замість `{url}` і віддає перевагу вашому шлюзу.
+| Маршрут | Призначення |
+|---|---|
+| `GET /` | health-check (Render, UptimeRobot) |
+| `GET /fetch?url=...` | проксі однієї сторінки УЗ (запасний режим для Actions) |
+| `POST /refresh` | зібрати розклад і закомітити `schedule.json` через GitHub API |
+| `GET /status` | стан останньої збірки |
+| `GET /schedule.json` | свіжозібраний розклад просто з пам'яті, без очікування GitHub Pages |
 
-Розклад збирається двічі на добу: о 06:00 і 12:00 за Києвом (`--slots 6,12`). Скрипт сам
-вирішує за часом останнього оновлення, тому пропуск або затримка cron не зриває оновлення:
-наступний запуск наздоганяє слот. Канал УЗ (`live.json`) оновлюється щопівгодини.
+### Налаштування сервісу (одноразово, безкоштовно)
+
+1. **Токен GitHub:** https://github.com/settings/personal-access-tokens/new → Repository access:
+   `merefa-rozklad` → Permissions → Repository permissions → **Contents: Read and write** → Generate.
+2. **Сервіс:** https://dashboard.render.com → New → Web Service → репозиторій `merefa-rozklad` →
+   **Region: Frankfurt (EU Central)**, Instance Type: **Free**,
+   Build Command `pip install -r requirements.txt`,
+   Start Command `gunicorn gateway:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1`,
+   Environment: `GH_TOKEN` = токен з кроку 1.
+3. **Секрет репозиторію:** Settings → Secrets and variables → Actions → New repository secret:
+   ім'я `GATEWAY_URL`, значення `https://<ім'я-сервісу>.onrender.com`.
+4. **Кнопка в Mini App:** у `index.html` вписати ту саму адресу в константу `GATEWAY_URL`.
+
+Після цього оновлення повністю автономне: GitHub Actions щопівгодини перевіряє, чи настав слот
+(06:00, 10:00, 13:00 за Києвом), і якщо так, просить сервіс зібрати розклад. Кнопка ↻ у Mini App
+запускає збірку вручну і одразу показує свіжі дані, не чекаючи деплою GitHub Pages.
+Безкоштовний Render засинає без трафіку, тому перший запит прокидає сервіс до хвилини.
 
 ## Локальний запуск
 

@@ -72,6 +72,21 @@
     transition: background .15s;
   }
   #date-box:hover { background: #162040; border-color: var(--amber); }
+  #btn-refresh {
+    background: #0d1830;
+    border: 1px solid #2a4060;
+    color: var(--green);
+    border-radius: 5px;
+    padding: 3px 8px;
+    font-size: 15px;
+    line-height: 1.1;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  #btn-refresh:hover:not(:disabled) { background: #123021; border-color: var(--green); }
+  #btn-refresh:disabled { color: var(--dim); cursor: default; }
+  #btn-refresh.busy { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   /* DATE PICKER OVERLAY */
   #date-overlay {
@@ -438,7 +453,8 @@
 <body>
 
 <div id="header">
-  <h1>🚂 РОЗКЛАД ЕЛЕКТРИЧОК</h1>
+  <h1>🚂 РОЗКЛАД</h1>
+  <button id="btn-refresh" onclick="forceRefresh()" title="Оновити розклад із сайту УЗ" hidden>↻</button>
   <div id="date-box" onclick="openDatePicker()">завантаження...</div>
 </div>
 
@@ -492,6 +508,9 @@ const CHANNEL_URL  = "https://t.me/UZprymisky";
 const KHARKIV_SID = 2528, MEREFA_SID = 2538;
 const REFRESH_MS = 10 * 60 * 1000;   // автооновлення даних у відкритому застосунку
 const LIVE_FRESH_H = 3;              // затримка вважається актуальною для банера стільки годин
+// Сервіс-збирач у Європі (gateway.py на Render, регіон Frankfurt). Якщо порожньо, кнопка
+// примусового оновлення не показується і застосунок працює лише на даних з GitHub Pages.
+const GATEWAY_URL = "";
 // ════════════════════════════════════════════════════════
 
 // Запасний перелік станцій, якщо schedule.json ще не завантажено
@@ -637,6 +656,64 @@ setInterval(loadAll, REFRESH_MS);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && Date.now() - lastLoad > 5 * 60 * 1000) loadAll();
 });
+
+// ── Примусове оновлення через сервіс-збирач ─────────────
+let refreshing = false;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function refreshUI(text, busy, cls) {
+  const btn = document.getElementById("btn-refresh");
+  const status = document.getElementById("status-bar");
+  btn.disabled = busy;
+  btn.classList.toggle("busy", busy);
+  if (text) {
+    status.textContent = text;
+    status.className = cls || "";
+  }
+}
+
+async function forceRefresh() {
+  if (!GATEWAY_URL || refreshing) return;
+  refreshing = true;
+  refreshUI("↻ Запит на оновлення... (сервер може прокидатись до хвилини)", true, "");
+  try {
+    const started = await fetch(GATEWAY_URL + "/refresh", { method: "POST" }).then(r => r.json());
+    if (started.status === "too_soon") {
+      refreshUI(`Розклад щойно оновлювався. Спробуйте через ${started.wait_seconds} с`, false, "stale");
+      refreshing = false;
+      return;
+    }
+    refreshUI("↻ Збираю розклад із сайту УЗ...", true, "");
+    for (let i = 0; i < 60; i++) {
+      await sleep(3000);
+      let st;
+      try { st = await fetch(GATEWAY_URL + "/status").then(r => r.json()); }
+      catch (e) { continue; }
+      if (st.running) continue;
+      if (st.ok === false) { refreshUI("Не вдалося оновити: " + (st.message || ""), false, "error"); refreshing = false; return; }
+      const fresh = await fetch(GATEWAY_URL + "/schedule.json").then(r => r.json()).catch(() => null);
+      if (fresh?.trains) {
+        S = fresh;
+        lsSet("schedule.v2", S);
+        offline = false;
+        if (S.stations?.length) STATIONS = S.stations;
+        buildSidebar();
+        renderAll();
+      }
+      refreshUI(null, false, null);
+      const status = document.getElementById("status-bar");
+      status.textContent = (st.committed ? "✓ Оновлено з сайту УЗ: " : "✓ Змін немає, перевірено: ")
+        + fmtStamp(st.generated || S?.generated);
+      status.className = "fresh";
+      refreshing = false;
+      return;
+    }
+    refreshUI("Оновлення триває довше, ніж очікувалось. Спробуйте пізніше", false, "stale");
+  } catch (e) {
+    refreshUI("Сервіс оновлення недоступний", false, "error");
+  }
+  refreshing = false;
+}
 
 // ── Вибірка поїздів на дату ─────────────────────────────
 function dayInfo(key) {
@@ -997,6 +1074,7 @@ function setMode(m) {
 
 // ── Старт ────────────────────────────────────────────────
 updateDateBox();
+if (GATEWAY_URL) document.getElementById("btn-refresh").hidden = false;
 loadAll();
 </script>
 </body>

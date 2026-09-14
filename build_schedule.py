@@ -269,6 +269,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="години оновлення за київським часом через кому, напр. 6,12: "
                          "запуск лише якщо schedule.json старіший за останній слот")
     ap.add_argument("--force", action="store_true", help="ігнорувати --slots і --max-age-hours")
+    ap.add_argument("--check-only", action="store_true",
+                    help="нічого не збирати: код виходу 0 якщо час оновлювати, 3 якщо ні")
     ap.add_argument("--refresh-cache", action="store_true", help="перезавантажити сторінки всіх поїздів")
     ap.add_argument("--today", help="дата «сьогодні» у форматі YYYY-MM-DD (для тестів)")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -278,6 +280,12 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    if args.check_only:
+        hours = [int(h) for h in (args.slots or "6,10,13").split(",") if h.strip()]
+        due, why = due_by_slots(SCHEDULE_FILE, now_kyiv(), hours)
+        log.info("%s: %s", "Пора оновлювати" if due else "Ще не час", why)
+        return 0 if (due or args.force) else 3
 
     if not args.force:
         if args.slots:
