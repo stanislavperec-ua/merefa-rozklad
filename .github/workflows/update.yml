@@ -1,24 +1,71 @@
 name: Update schedule data
 
+# Один workflow на обидва джерела, щоб не було гонок при push:
+#   * build_live.py     : щопівгодини (канал УЗ: затримки, скасування);
+#   * build_schedule.py : не частіше ніж раз на 4 години (офіційний розклад swrailway.gov.ua),
+#                         або примусово через workflow_dispatch з force=true.
+# Cron у UTC: 02:00-20:30 UTC = 05:00-23:30 Київ влітку, 04:00-22:30 взимку.
+
 on:
   schedule:
-    - cron: "0 5 * * *"
-    - cron: "0 7 * * *"
-    - cron: "0 10 * * *"
+    - cron: "*/30 2-20 * * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Примусово оновити розклад УЗ (ігнорувати вік schedule.json)"
+        type: boolean
+        default: false
+      refresh_cache:
+        description: "Перезавантажити сторінки всіх поїздів (trains_cache.json)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-schedule-data
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: pip install requests beautifulsoup4
-      - run: python scraper.py
-      - run: git config user.name "github-actions[bot]"
-      - run: git config user.email "github-actions[bot]@users.noreply.github.com"
-      - run: git add data.json
-      - run: git diff --staged --quiet || git commit -m "Auto-update $(date +'%Y-%m-%d %H:%M')"
-      - run: git push
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install --quiet requests beautifulsoup4
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests
+
+      - name: Official timetable (swrailway.gov.ua)
+        env:
+          FORCE: ${{ inputs.force }}
+          REFRESH: ${{ inputs.refresh_cache }}
+        run: |
+          ARGS="--max-age-hours 4"
+          [ "$FORCE" = "true" ] && ARGS="$ARGS --force"
+          [ "$REFRESH" = "true" ] && ARGS="$ARGS --refresh-cache"
+          python build_schedule.py $ARGS
+
+      - name: Live channel messages (t.me/UZprymisky)
+        run: python build_live.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add schedule.json live.json trains_cache.json
+          if git diff --staged --quiet; then
+            echo "Без змін"
+            exit 0
+          fi
+          git commit -m "Auto-update $(TZ=Europe/Kyiv date +'%Y-%m-%d %H:%M')"
+          git pull --rebase origin main
+          git push

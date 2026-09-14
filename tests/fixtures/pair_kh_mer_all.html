@@ -1,0 +1,723 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html><head>
+<title>РОЗКЛАД РУХУ Приміських поїздів</title>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+<meta name="keywords" content="Південно-Західна залізниця,розклад, поїзди, приміських поїздів, розклад руху електропоїздів, розклад руху поїздів, укрзалізниця">
+<link rel="stylesheet" type="text/css" href="/modules/css/eltrain-way.css"><link rel="stylesheet" type="text/css" href="/modules/js/jquery-ui/jquery-ui.min.css"><link rel="stylesheet" type="text/css" href="/modules/js/leaflet/leaflet.css"><link rel="stylesheet" type="text/css" href="/modules/js/leaflet/Control.FullScreen.css"><link rel="stylesheet" type="text/css" href="/modules/css/eltrain.css"><link rel="stylesheet" type="text/css" href="/modules/css/style.css"><link rel="stylesheet" type="text/css" href="/modules/css/mystyle.css"><link rel="stylesheet" type="text/css" href="/modules/css/tpagemenu/css/site-top.css"><script language="JavaScript" src="/modules/js/jquery.min.js" type="text/javascript"></script><script language="JavaScript" src="/modules/js/jquery-ui/jquery-ui.min.js" type="text/javascript"></script><script language="JavaScript" src="/modules/js/jquery-ui/datepicker-uk.js" type="text/javascript"></script><script language="JavaScript" src="/modules/js/rsi_autocomplete_class.js" type="text/javascript"></script><script language="JavaScript" src="/modules/js/leaflet/leaflet.js" type="text/javascript"></script><script language="JavaScript" src="/modules/js/leaflet/Control.FullScreen.js" type="text/javascript"></script><script language="JavaScript" src="/modules/js/direction-atmap.js?v=x211" type="text/javascript"></script><script language="JavaScript" src="/modules/css/tpagemenu/js/TPageMenu.js" type="text/javascript"></script><script language="JavaScript" src="/modules/js/utils.js" type="text/javascript"></script>
+</head>
+<BODY onload="" bottomMargin=0 bgColor=#ffffff leftMargin=0 topMargin=0 align="center" marginheight="0" marginwidth="0" rigthmargin="0">
+<TABLE width="990" HEIGHT="100%" cellspacing="0" cellpadding="0" align=center>
+<TR>
+<TD height=10><TABLE cellSpacing=0 cellPadding=0 width="100%"
+  border=0 align=center><TBODY>
+  <TR vAlign=top>
+<TD width=1 background="/img/bg_dotv.gif" height="100%"><IMG height=1 alt="" src="/img/spacer.gif" width=1 border=0></TD>
+    <TD><TABLE cellSpacing=0 cellPadding=0 width=100% border=0 align=center>
+        <TBODY>
+        <TR>
+          <TD><table cellpadding=0 cellspacing=0 border=0 width=100%>
+           <tr><td width=223 style='background-color:#DEF1FE'>
+           <A class=lang title='НА ГОЛОВНУ СТОРІНКУ' href="/"><img src='/img/Logo-net.jpg' width=223 height=146 border=0></A></td>
+           <td><img src="/img/vokzal-net.jpg" width=100% height=146 border=0></td>
+          </tr></table></TD></TR>
+         <TR><TD id="menujs" name="menujs" style="height:26px;background-color:#6CACD8;text-align:center;font-family: Tahoma; font-size: 11px; font-weight: bold; color: White;z-index:10;" >
+         Завантаження меню ... <NOSCRIPT>Відображення меню неможливо - у вас відключено JavaScript</NOSCRIPT>
+         </TD></TR></TBODY></TABLE>
+</TD>
+</TR>
+</TABLE>
+  <script language="JavaScript">
+  <!--
+      //Создание объекта меню
+      K = new TPageMenu;
+      //Промежуток между меню в пикселах
+      K.MenuSpacing = 5;
+      K.SubMenuSpacing = 1;
+      //Смещение тени
+      K.ShadowOffsetX = 3;
+      K.ShadowOffsetY = 3;
+      //Задержки перед появлением и исчезновением меню
+      K.ShowDelay = 150;
+      K.HideDelay = 400;
+      //Задание структуры меню
+      K.addItem("Про нас", "/head/", false);K.Items[0].addItem("Загальна інформація", "/head/general/", false);K.Items[0].addItem("Керівництво", "/head/managment/", false);K.Items[0].addItem("Дорпрофсож", "/head/dorpr/", false);K.addItem("НОВИНИ та ІНТЕРВ'Ю", "/newsline/", false);K.addItem("Перевезення вантажів", "/M/", false);K.Items[2].addItem("Правила перевезення вантажів", "/M/pravila/", false);K.Items[2].addItem("Роботи, послуги за вільними тарифами", "/M/victory_tar/", false);K.Items[2].addItem("Укладання договорів на залізниці", "/M/cod_doc/", false);K.Items[2].addItem("Перелік послуг, які надаються комерційним господарством", "/M/poslygi/", false);K.Items[2].addItem("Послуги Жмеринської механізованої дистанції навантажувально-розвантажувальних робіт", "/M/posl_jmer/", false);K.Items[2].addItem("Станції, відкриті для вантажних операцій на місцях загального користування", "/M/st/", false);K.Items[2].addItem("Перелік осіб, яким надається право дозволу на переадресування вантажів", "/M/perelik_osib/", false);K.Items[2].addItem("Структурний підрозділ служба статистики", "/M/statistics/", false);K.addItem("Послуги", "/poslugi/", false);K.addItem("РОЗКЛАД РУХУ", "/timetable/", false);K.Items[4].addItem("РОЗКЛАД РУХУ Приміських поїздів", "/timetable/eltrain/", false);K.addItem("Кваліфікаційний центр", "/kvalc/", false);
+      //Вставка объекта в указанный тег HTML
+      K.insertElementIn("menujs", "top", true);
+  //-->
+  </script></TD>
+</TR>
+<TR><TD>
+ <table width=100% height=100% cellspacing="0" cellpadding="0">
+ <tr>
+ <TD width=1 background="/img/bg_dotv.gif" height="30"><IMG height=1 alt="" src="/img/spacer.gif" width=1></TD>
+ <TD valign=top width=100%  height="30">
+  <ul style="margin-top:7px;margin-left:26px;margin-bottom:7px;"><li><font color=darkgray><a href='/' class=status>Головна</a> <img src='/img/arrows2.gif'> <a href='/timetable/'>РОЗКЛАД РУХУ</a> <img src='/img/arrows2.gif'> РОЗКЛАД РУХУ Приміських поїздів</font></ul>
+ </td>
+ <TD width=1 background="/img/bg_dotv.gif" height="30"><IMG height=1 alt="" src="/img/spacer.gif" width=1></TD>
+ </tR>
+  <tr>
+ <TD width=1 background="/img/bg_dotv.gif" height="30"><IMG height=1 alt="" src="/img/spacer.gif" width=1></TD>
+ <TD width=100% valign=top>
+  <table width=100% cellspacing="3" cellpadding="3">
+   <tr><td>
+   <style>
+input.geoandstation { font-size:16px;}
+input.train { font-size:16px; width:190px;}
+</style>
+<table width=100% border=0 cellSpacing=0 cellPadding=0 >
+<tr><td nowrap>
+<a href='.'><font color=silver size='1'>[На початок]</font></a>
+</font></td>
+ <td width=100%><div align=center> </div></td>
+<td nowrap><div align=right>
+<a href=".?sid1=2528&sid2=2538&dateR=0"><img src=/img/lng/ukr_off.gif></a><!--<a href=".?sid1=2528&sid2=2538&dateR=0&lng=_ru"><img src=/img/lng/rus_off.gif></a>--><a href=".?sid1=2528&sid2=2538&dateR=0&lng=_en"><img src=/img/lng/eng_off.gif></a>
+</div></td></tr>
+<TR ><TD colspan=3 >
+<center>
+
+
+Розклад на сайті повинен щоденно поновлюватись відповідальними працівниками по кожній регіональній дирекції. 
+<br>Поки що в розкладі можлива відсутність відображення невеликих тимчасових змін, або випадкові розбіжності. 
+<br>для надійності погоджуйте розклад з поточною інформацією на станціях!
+
+
+<p>
+
+<b>
+<font color=red>До уваги! </font> Розклад руху <a href='?rid=471'><font color=red>Київської кільцевої електрички</font></a>  <br>
+</b> 
+
+
+<!--
+<font color=red>До уваги!</font> <a href="?rid=471" style='font-size:12px;color:maroon;font-weight:bold'><img src="/img/arrows2.gif"> Розклад руху <b>міської</b> електрички залізничним кільцем (Київ)</a>
+
+
+</p> 
+<p>
+
+<font color=red>До уваги!</font> <a href="?rid=239"><img src="/img/arrows2.gif"> Розклад руху <b>Kyiv Boryspil Express</b> </a>
+
+
+</p>
+-->
+
+<!--<font color=red>До уваги!</font> <a href="?gid=1&rid=470&nofar=1" style='font-size:14px;color:maroon;font-weight:bold'><img src="/img/arrows2.gif"> З метою перевезення пасажирів по м. Київ з 21.03.2022р. <br>і до відміни призначається курсування наступних приміських поїздів (РОЗКЛАД тут)</a>
+
+<font color=red>До уваги!</font> <span style='font-size:14px;color:maroon;font-weight:bold'> Повний розклад міської електрички м. Києва буде опубліковано 28 березня о 15:30</span>
+-->
+
+
+
+
+<p>
+<font color=red>До уваги!</font> <font color=green><b>Кілометри тарифних відстаней</b></font>  поки що відображаються приблизно, можуть бути деякі розбіжності чи відсутність даних
+
+</p>
+
+
+
+<div><!--<a href="eltrain-v4.1.htm" style="color:#CA6D35"><b>&raquo; ЩО НОВОГО з <font color=red>10 березня 2021</font>?</b></a>--></div>
+<div id="divbody">
+<style>
+.beta1{
+    background-image: url(/modules/css/beta1.png);
+    background-position: left top;
+    background-repeat: no-repeat; 
+}
+</style>   
+
+<form name="inp_station" action="" method="get">
+  <input name="sid1" type="hidden" value="">
+  <input name="geo1" type="hidden" value="">
+  <input name="sid2" type="hidden" value="">
+  <input name="geo2" type="hidden" value="">
+<TABLE class=test width=100% align=center border="0" cellspacing="1" cellpadding="0">
+<TR><TD>
+<table width=100% align=center border="0" cellspacing="1" cellpadding="0">
+<tr><td class=sh2>
+Розклад руху приміських поїздів між СТАНЦІЯМИ \ РЕГІОНАМИ
+
+
+</td></tr>
+<tr><td height=3 class=sh_line><img src=/img/spacer.gif></td></tr>
+<tr><td class='beta1 sh' style="padding:5 5 5 5">
+
+  <table align=center ><tr>
+    <td >Відправлення:</td>
+    <td><input class='rsi_autocomplete' type='geoandstation' name='geosid1' value='2528|sid|geo' filters='lng' fixVal='{"sid":"sid1","geo":"geo1"}' 
+    placeholder=" Пошук по назві">
+    </td>
+    <td>Прибуття:</td>
+    <td><input class='rsi_autocomplete' type='geoandstation' name='geosid2' value='2538|sid|geo' filters='lng' fixVal='{"sid":"sid2","geo":"geo2"}' 
+    placeholder=" Пошук по назві">
+    </td>
+    <td><a href='#' id=switch_sids title="Обміняти">
+     <img src='/img/reload.gif' width=18 valign=middle></a>&nbsp;</td>
+  <td><input type="submit" value="Показати"></td>
+  </tr>
+  <tr><td colspan=8 align=center>
+      <input name="dateR" type="radio" value="0">
+      Всі дні
+      <input name="dateR" type="radio" value="1">
+      На дату
+      <input name="eventdate" type="text" value="" class='inpDate eventdate' readonly >
+  </td></tr>
+  </table>
+<!--/ Включає інформацію про відстань і вартість проїзду
+
+-->
+</td></tr>
+<tr><td height=3 class=sh_line><img src=/img/spacer.gif></td></tr>
+</table>
+</TD></TR>
+</table>
+</form><br>
+<span id='test'><img src=/img/spacer.gif></span>
+
+
+<script language="javascript"><!--
+
+$(document).ready(function() {
+
+  $("#switch_sids").click (function () { switch_sids(); } );
+
+  $('[name="inp_station"]').submit(function(e) {
+    $('[name="geosid1"]', this).prop( "disabled", true);
+    $('[name="geosid2"]', this).prop( "disabled", true);
+  });
+  $("input[name='sid1']").change(function() {
+    if (!$("input[name='geosid2']").val())
+      $('#test').slideUp(300, function() {  $('#test').load('?AJ=sids2_list&lng=&sid1='+$("input[name='sid1']").val(), function() { $('#test').slideDown(600); });  });
+  });
+  $("input[name='sid2']").change(function() { $('#test').slideUp(400); });
+  
+  function switch_sids() {
+    
+    var s0t = $('#geoandstation0_text'), s1t = $('#geoandstation1_text'), s0i = $('#geoandstation0_info'), s1i = $('#geoandstation1_info'), 
+    s0v = $("input[name='geosid1']"), s1v = $("input[name='geosid2']");
+    sid0v = $("input[name='sid1']"), sid1v = $("input[name='sid2']");
+    geo0v = $("input[name='geo1']"), geo1v = $("input[name='geo2']");
+    
+    s1t.val([s0t.val(), s0t.val(s1t.val())][0]); // swap
+    s1i.html([s0i.html(), s0i.html(s1i.html())][0]); // swap
+    s1v.val([s0v.val(), s0v.val(s1v.val())][0]); // swap
+    sid1v.val([sid0v.val(), sid0v.val(sid1v.val())][0]); // swap
+    geo1v.val([geo0v.val(), geo0v.val(geo1v.val())][0]); // swap
+  };
+ 
+});
+
+//--->
+</script><style>.td_center td {text-align:center;}
+.qkms {color:009B4E;width:40px;font-size:11px;}
+td.tm {padding: 0 5 0 5;}
+</style>
+<table id=geo2g class=td_center cellSpacing=2 cellPadding=0 border=0 width=100%>
+<tr class=pix2><td colspan=30><img src=/img/spacer.gif></td></tr>
+<tr class="onx" height=20><td colspan=4 >
+  <a name='11'></a>
+ Прямі потяги 
+ </td>
+  <td colspan=3 style="text-align:center;background-color:#BFFFBF;padding:2 1 2 1;">  
+    <a href="?geo=165"><img src="/img/marker64.png" width=16 align=center><b>Харків</b><div class=s_desc>Україна &raquo; Харківська область</div></a>
+   </td>
+  <td colspan=3 style="text-align:center;background-color:#FFE2D5;padding:2 1 2 1;">  
+    <a href="?geo=166"><img src="/img/marker64.png" width=16 align=center><b>Мерефа</b><div class=s_desc>Україна &raquo; Харківська область</div></a>
+   </td>
+  
+  <td rowspan=2 class=tm>Час<br>в<br>дорозі</td>
+  <td></td><td colspan=2>
+  Термін дії
+  </td></tr>
+<tr class="onx" height=20>
+
+
+
+<td>№</td><td></td><td>Обіг</td><td>Маршрут прямування</td>
+  <td>приб.</td><td>Зупинка</td><td>відпр.</td><td>приб.</td><td>Зупинка</td><td>відпр.</td><td>км</td><td>з</td><td>по</td>
+</tr>
+<tr class=pix2><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+
+<tr class="on" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=15371">&nbsp;<b>6701</b></a>
+    
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2024-05-24 по 2026-12-12"></td>
+	<td>Харків-Пасажирський – Зміїв&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>04:05</td>
+  <td class=tm>04:41</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>04:43</td>
+  <td class=tm>0:36</td>
+  <td class=qkms>21.6</td>
+    <td>2024-05-24&nbsp;</td><td>2026-12-12&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="onx" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=28152">&nbsp;<b>6685</b></a>
+    
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2025-12-14 по 2026-12-12"></td>
+	<td>Харків-Пасажирський – Берестин&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>07:13</td>
+  <td class=tm>07:56</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>07:58</td>
+  <td class=tm>0:43</td>
+  <td class=qkms>24</td>
+    <td>2025-12-14&nbsp;</td><td>2026-12-12&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="on" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=28865">&nbsp;<b>6513</b></a>
+    
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2026-08-24 по 2026-12-28"></td>
+	<td>Харків-Пасажирський – Герсеванівский&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>08:40</td>
+  <td class=tm>09:26</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>09:27</td>
+  <td class=tm>0:46</td>
+  <td class=qkms>24</td>
+    <td>2026-08-24&nbsp;</td><td>2026-12-28&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="onx" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=27117">&nbsp;<b>6687</b></a>
+    
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2025-08-01 по 2026-12-12"></td>
+	<td>Харків-Пасажирський – Берестин&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>08:46</td>
+  <td class=tm>09:38</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>09:40</td>
+  <td class=tm>0:52</td>
+  <td class=qkms>24</td>
+    <td>2025-08-01&nbsp;</td><td>2026-12-12&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="on" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=30426">&nbsp;<b>6853</b></a>
+    
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2026-08-25 по 2026-12-12"></td>
+	<td>Харків-Пасажирський – Герсеванівский&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>12:42</td>
+  <td class=tm>13:27</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>13:29</td>
+  <td class=tm>0:45</td>
+  <td class=qkms>24</td>
+    <td>2026-08-25&nbsp;</td><td>2026-12-12&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="onx" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=25010">&nbsp;<b>6691</b></a>
+    
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2024-12-15 по 2026-12-12"></td>
+	<td>Харків-Пасажирський – Берестин&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>13:42</td>
+  <td class=tm>14:26</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>14:28</td>
+  <td class=tm>0:44</td>
+  <td class=qkms>24</td>
+    <td>2024-12-15&nbsp;</td><td>2026-12-12&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="on" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=28048">&nbsp;<b>7001</b></a>
+    <img src=/img/attention!.png style="cursor: help;width:16px;" title="з 2026-09-17 по 2026-12-12">
+    <font color=red title='є актуальні повідомленя'><sup><b>1</b></sup></font>
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2026-09-17 по 2026-12-12"></td>
+	<td>Харків-Пасажирський – Герсеванівский&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>16:00</td>
+  <td class=tm>16:45</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>16:46</td>
+  <td class=tm>0:45</td>
+  <td class=qkms>24</td>
+    <td>2026-09-17&nbsp;</td><td>2026-12-12&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="onx" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=28052">&nbsp;<b>6525</b></a>
+    
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2026-08-12 по 2026-09-16"></td>
+	<td>Харків-Пасажирський – Герсеванівский&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>17:09</td>
+  <td class=tm>17:54</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>17:55</td>
+  <td class=tm>0:45</td>
+  <td class=qkms>24</td>
+    <td>2026-08-12&nbsp;</td><td>2026-09-16&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="on" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=15372">&nbsp;<b>6705</b></a>
+    
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2024-05-17 по 2026-12-12"></td>
+	<td>Харків-Пасажирський – Зміїв&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>17:17</td>
+  <td class=tm>18:00</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>18:01</td>
+  <td class=tm>0:43</td>
+  <td class=qkms>24</td>
+    <td>2024-05-17&nbsp;</td><td>2026-12-12&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="onx" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=29990">&nbsp;<b>6693</b></a>
+    
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2026-06-28 по 2026-12-13"></td>
+	<td>Харків-Пасажирський – Берестин&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>17:30</td>
+  <td class=tm>18:12</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>18:14</td>
+  <td class=tm>0:42</td>
+  <td class=qkms>24</td>
+    <td>2026-06-28&nbsp;</td><td>2026-12-13&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="on" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=30665">&nbsp;<b>6525</b></a>
+    <img src=/img/attention!.png style="cursor: help;width:16px;" title="з 2026-09-17 по 2026-12-12">
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2026-09-17 по 2026-12-12"></td>
+	<td>Харків-Пасажирський – Герсеванівский&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>17:46</td>
+  <td class=tm>18:31</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>18:32</td>
+  <td class=tm>0:45</td>
+  <td class=qkms>24</td>
+    <td>2026-09-17&nbsp;</td><td>2026-12-12&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="onx" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=29388">&nbsp;<b>6527</b></a>
+    
+    <font color=red title='є актуальні повідомленя'><sup><b>1</b></sup></font>
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2026-03-17 по 2026-09-16"></td>
+	<td>Харків-Пасажирський – Златопіль&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>18:10</td>
+  <td class=tm>18:57</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>18:58</td>
+  <td class=tm>0:47</td>
+  <td class=qkms>24</td>
+    <td>2026-03-17&nbsp;</td><td>2026-09-16&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="on" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=20894">&nbsp;<b>6697</b></a>
+    
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2024-05-31 по 2026-12-12"></td>
+	<td>Харків-Пасажирський – Берестин&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>20:22</td>
+  <td class=tm>21:05</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>21:07</td>
+  <td class=tm>0:43</td>
+  <td class=qkms>24</td>
+    <td>2024-05-31&nbsp;</td><td>2026-12-12&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+<tr class="onx" style="CURSOR:pointer;" height=20>
+    <td><a class=et title='' href=".?tid=23564">&nbsp;<b>6529</b></a>
+    
+    
+</td><td>	
+    
+    
+    </td>
+	<td>щоденно&nbsp;<img src=/img/fiveday.gif style="cursor: help" title="з 2025-02-07 по 2026-12-12"></td>
+	<td>Харків-Пасажирський – Біляївка&nbsp;</td>
+	<td>–</td>
+  <td class=tm><a class=et href="?sid=2528"><b>Харків-Пасажирський</b></a></td>
+  <td class=tm>20:30</td>
+  <td class=tm>21:15</td>
+  <td class=tm><a class=et href="?sid=2538"><b>Мерефа</b></a></td>
+  <td>21:17</td>
+  <td class=tm>0:45</td>
+  <td class=qkms>24</td>
+    <td>2025-02-07&nbsp;</td><td>2026-12-12&nbsp;</td>
+</tr>
+<tr class=pix><td colspan=30><img src=/img/spacer.gif></td></tr>
+
+
+
+
+</table>
+
+<script type="text/javascript">
+$(document).ready(function(){
+  $("#geo2g").on("click", "tr.on,tr.onx", function () {  if ($(this).find('.et').attr('href')) window.location.href = $(this).find('.et').attr('href'); });
+  
+});
+</script><style>.td_center td {text-align:center;}
+.qkms2 {color:009B4E;font-size:11px;padding-top:6px;}
+a.et {font-size:12px;}
+td.tm {padding: 0 5 0 5;}
+</style>
+<h2 style='margin:15 0 5 0'>Маршрути з пересадкою</h2>
+
+<div style='color:red'>
+  Не знайдено маршрутів за вказаними параметрами
+ </div>
+
+
+
+<div id="modal-message" title="Завантаження..." style='width:900px;height:650px;'>
+<div id="modal-content"></div>
+</div>
+
+
+<script type="text/javascript">
+$(document).ready(function(){
+  $( "#modal-message" ).dialog({
+      height: 650,
+      width: 910,
+      autoOpen: false,
+     // modal: true,
+  });
+
+  $(".geo3g").on("click", "tr.on,tr.onx", function () {
+    var url = $(this).attr('url');
+    if (url) {
+      $("#modal-message").dialog( "option", "title", $(this).attr('urlname') );
+      $( "#modal-content" ).load(url, function() { 
+        $("#modal-message").dialog( "open" );
+      });
+    }  
+     // window.location.href = $(this).attr('url'); 
+  });
+  
+  
+});
+</script>
+</div>
+
+<!--
+<br><font color=red>До уваги!</font> <img src=/img/imap.png valign=middle> <a href="railmap/"><img src="/img/arrows2.gif"><b> Інтерактивна карта-схема  Південно-Західнної залізниці</b></a>
+
+
+-->
+<br><br>
+
+довідка: <a class=et href='../eltrain/attention/'>Тарифи</a> | <a class=et href='/img/pzz_mapa.png'>Карта Південно-Західнної залізниці</a>
+
+
+
+
+
+</center>
+</TD></TR>
+<tr><td ><font color=silver size='1'>ElTrain&nbsp;v4.1<font></td>
+<td width=100%>
+<!--<center>&nbsp;<a title='інформація про систему розкладу' href='info/'><font color=silver size='1'>[інформація]</font>&nbsp;</a>&nbsp;</center>
+--></td>
+<td nowrap><div align=right><a href="/head/services/info/M/"><font color=silver size='1'>&copy;&nbsp;2005-2021&nbsp;ГІОЦ ВП КВ</font></a></div>
+</TD></TR>
+<TR><TD colspan=3>
+
+  <table width=100%><tr>
+   <td>   
+
+    
+   </td>
+   <td align=center style='border:1px;'>
+   
+   </td>
+   <td style='text-align:right'>
+
+   </td></tr> 
+  </table>
+
+</TD></TR>
+</TABLE>
+<input id="language" name="lng" type="hidden" value=""> <!-- name=lng использую в rsi_autocomplete filters -->
+<script>
+$(document).ready(function(){
+  
+  var language  = $('#language').val();
+  var rsi_autocomplete = new rsi_autocomplete_class('rsi_autocomplete'); 
+  
+  $('#divbody').on('mouseover', 'tr.on,tr.onx', function () { $(this).data("bc", $(this).css("background-color")).css("background-color","#FFFFBB"); } );
+  $('#divbody').on('mouseout', 'tr.on,tr.onx', function () { $(this).css("background-color",$(this).data("bc")); } );
+  
+  $('.hide_menu').hide();
+  
+  $( ".eventdate" )
+      .datepicker({ changeMonth: true, changeYear: true,  monthNamesShort: $.datepicker.regional['uk'].monthNames,  
+                    minDate: '2026-09-14', maxDate: '2026-11-14', dateFormat: 'yy-mm-dd' });
+  $('form').each (function (i, e) {
+    var it = this;
+    var $dateR = $('input[name="dateR"]', this); 
+    var $eventdate = $('.eventdate', this);
+    $eventdate.change(function() { 
+      if ($eventdate.val()) $('input[name="dateR"][value="1"]', it).prop('checked', true); 
+      else $('input[name="dateR"][value="0"]', it).prop('checked', true);
+    }); 
+    $eventdate.change();
+    if ($eventdate.val()) 
+      $('input[name="dateR"][value="1"]').prop('checked', true); 
+    else 
+      $('input[name="dateR"][value="0"]').prop('checked', true);
+    $dateR.change(function() {  
+      if ($(this).val()==0) $eventdate.val('');  // установим текущую дату
+      else if (!$eventdate.val()) $eventdate.val($.datepicker.formatDate('yy-mm-dd', new Date()));  
+    }); 
+    
+  });
+  
+ // очистим форму отправки от ненужных элементов, добавим параметр язык если задан
+ $('form').submit(function(e) {
+   $('[name="dateR"]', this).prop( "disabled", true); 
+    $(':input', this).each (function (k, v) {  
+      if (!$(this).val() || $(this).val()=="0")  { $(this).prop( "disabled", true );  }
+    });
+   if (language) { var input = $('<input>').attr('type', 'hidden').attr('name', 'lng').val(language); $(this).append(input);  }  
+   $('input[type="submit"]').hide();
+ }); 
+  
+
+});
+</script>
+ 
+   </td></tr>
+  </td></tr>
+  </table>
+ </TD>
+ <TD width=1 background="/img/bg_dotv.gif" height="30"><IMG height=1 alt="" src="/img/spacer.gif" width=1></TD>
+ </tr>
+ </table>
+</TR></TD>
+<TR><TD height=10><TABLE height="100%" cellSpacing=0 cellPadding=0 width="100%" align=center border=0>
+<TBODY>
+<TR><TD width="100%" background="/img/bg_dot.gif" colSpan=3><IMG height=1 src="/img/spacer.gif" width=1 border=0></TD></TR>
+<TR>
+<TD width=1 background=/img/bg_dotv.gif height="100%"><IMG height=1 alt="" src="/img/spacer.gif" width=1 border=0></TD>
+<TD align=left width="100%">
+<TABLE height=58 cellSpacing=0 cellPadding=0 width="100%" bgColor=#ebf2f8 border=0>
+<TBODY>
+<TR style="background-image: url(/img/bg_niz.gif);">
+<TD width=221 height="100%" nowrap >
+<!--<DIV style="PADDING-RIGHT: 15px; PADDING-LEFT: 15px; FONT-WEIGHT: bold; FONT-SIZE: 11px; PADDING-BOTTOM: 5px; COLOR: #44515a; PADDING-TOP: 5px; FONT-FAMILY: Tahoma">Контактна інформація</DIV>-->
+</TD>
+<TD width=1 height="100%">
+<DIV style="BACKGROUND-IMAGE: url(/img/bg_dotv.gif); MARGIN: 5px 0px; WIDTH: 1px; HEIGHT: 70%"><IMG height=1 src="/img/spacer.gif" width=1 border=0></DIV></TD>
+<TD width=900 height="100%">
+<DIV style="TEXT-ALIGN: right;PADDING-RIGHT: 15px;"><a class=nnbtitle href="/map/info/M/">&nbsp;© регіональна філія «Південно-Західна залізниця» АТ «Укрзалізниця» 2003-2026</a></DIV></TD></TR></TBODY></TABLE></TD>
+<TD width=1 background=/img/bg_dotv.gif height="100%"><IMG height=1 alt="" src="/img/spacer.gif" width=1 border=0></TD></TR>
+<TR><TD width="100%" background="/img/bg_dot.gif" colSpan=3><IMG height=1 src="/img/spacer.gif" width=1 border=0></TD></TR>
+</TBODY></TABLE></TD></TR></TBODY></TABLE></TD></TR>
+</TABLE>
+</body>
+</html>
+<!--сгенерено за 0.04296612739563 секунд
+-->

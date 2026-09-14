@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Розклад електричок</title>
+<title>Розклад електричок Харків – Мерефа</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
@@ -20,12 +20,15 @@
     --red:    #ff4444;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { overflow: hidden; }
   body {
     background: var(--bg);
     color: #fff;
     font-family: system-ui, sans-serif;
     font-size: 14px;
     height: 100dvh;
+    width: 100%;
+    max-width: 100vw;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -48,6 +51,7 @@
     color: var(--amber);
     font-family: monospace;
     white-space: nowrap;
+    flex-shrink: 0;
   }
   #date-box {
     background: #0d1830;
@@ -59,6 +63,10 @@
     font-weight: 700;
     font-family: monospace;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 0 1 auto;
     cursor: pointer;
     user-select: none;
     transition: background .15s;
@@ -97,7 +105,7 @@
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: 4px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
   }
   .dpicker-day-hdr {
     text-align: center;
@@ -108,7 +116,7 @@
   }
   .dpicker-day {
     text-align: center;
-    padding: 7px 2px;
+    padding: 5px 2px 3px;
     border-radius: 5px;
     font-size: 13px;
     font-weight: 600;
@@ -116,12 +124,18 @@
     color: #cce;
     border: 1px solid transparent;
     transition: background .1s;
+    min-height: 32px;
   }
   .dpicker-day:hover { background: #1a2e48; }
   .dpicker-day.today { border-color: var(--amber); color: var(--amber); }
   .dpicker-day.selected { background: var(--amber); color: #000; font-weight: 900; }
   .dpicker-day.other-month { color: #3a5570; }
-  .dpicker-day.empty { cursor: default; }
+  .dpicker-day.has-data::after {
+    content: ''; display: block; width: 4px; height: 4px; border-radius: 50%;
+    background: var(--green); margin: 2px auto 0;
+  }
+  .dpicker-day.selected.has-data::after { background: #000; }
+  .dpicker-legend { font-size: 10px; color: var(--muted); text-align: center; margin-bottom: 8px; }
   .dpicker-nav {
     display: flex;
     align-items: center;
@@ -157,11 +171,11 @@
 
   /* ALERT */
   #alert {
-    background: #1f1000;
-    border-bottom: 2px solid var(--warn);
+    background: #2a0a0a;
+    border-bottom: 2px solid var(--red);
     padding: 5px 12px;
     font-size: 11px;
-    color: #ffb86c;
+    color: #ffb0b0;
     flex-shrink: 0;
     line-height: 1.5;
     display: flex;
@@ -170,9 +184,14 @@
     gap: 8px;
     min-height: 30px;
   }
-  #alert.ok  { background: #001508; border-color: var(--green); color: #80ffb0; }
-  #alert b   { color: var(--warn); }
+  #alert b { color: var(--red); }
+  #alert.ok   { background: #001508; border-color: var(--green); color: #80ffb0; }
   #alert.ok b { color: var(--green); }
+  #alert.warn   { background: #1f1000; border-color: var(--warn); color: #ffb86c; }
+  #alert.warn b { color: var(--warn); }
+  #alert.info   { background: #08152a; border-color: var(--blue); color: #9fd6ff; }
+  #alert.info b { color: var(--blue); }
+  #alert.err   { background: #2a0808; border-color: var(--red); color: #ff9a9a; }
   #alert-link {
     color: var(--blue);
     font-size: 11px;
@@ -189,8 +208,12 @@
     text-align: right;
     padding: 2px 10px 3px;
     flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   #status-bar.fresh { color: #00a855; }
+  #status-bar.stale { color: var(--warn); }
   #status-bar.error { color: var(--red); }
 
   /* BODY */
@@ -240,21 +263,30 @@
   /* MAIN */
   #main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 10px 16px; }
 
-  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
   .tab {
     flex: 1;
-    padding: 8px 4px;
+    min-width: 0;
+    padding: 7px 0;
     border: 2px solid var(--border);
     cursor: pointer;
     border-radius: 6px;
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 11px;
+    font-weight: 700;
     background: var(--card);
     color: var(--muted);
     transition: all .15s;
     text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    position: relative;
   }
   .tab.active { background: var(--amber); color: #000; font-weight: 800; border-color: var(--amber); }
+  .tab .cnt {
+    position: absolute; top: 2px; right: 3px;
+    min-width: 14px; padding: 0 3px; line-height: 14px;
+    border-radius: 7px; background: var(--red); color: #fff; font-size: 9px; font-weight: 800;
+  }
 
   h2   { font-size: 17px; font-weight: 900; margin-bottom: 3px; }
   .hint { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
@@ -265,8 +297,8 @@
     background: var(--card);
     border-radius: 5px;
     border: 1px solid var(--border);
+    line-height: 1.7;
   }
-  .legend .ok { color: var(--amber); font-weight: 700; }
 
   .dir-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; margin-top: 2px; }
   .dir-bar  { width: 4px; height: 18px; border-radius: 2px; flex-shrink: 0; }
@@ -276,20 +308,10 @@
   .tbl-wrap { margin-bottom: 18px; }
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 
-  /* Ширини колонок — режим станції */
-    .col-time { width: 26%; }
-    .col-num  { width: 26%; }
-  
-    .col-end  { width: 26%; }
-    .col-note { width: 22%; }
-
-  /* Ширини колонок — режим маршруту */
-  .rc-num  { width: 13%; }
-  .rc-dep  { width: 20%; }
-  .rc-arr  { width: 20%; }
-  .rc-dur  { width: 13%; }
-  .rc-dst  { width: 17%; }
-  .rc-note { width: 17%; }
+  .col-time { width: 24%; }
+  .col-num  { width: 30%; }
+  .col-end  { width: 22%; }
+  .col-note { width: 24%; }
 
   th {
     text-align: left;
@@ -308,20 +330,45 @@
     overflow: hidden;
   }
   tr:nth-child(even) td { background: #0c1525; }
-  tr:hover td { background: #132035; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: #132035; }
 
   .t-time     { font-weight: 800; font-size: 15px; font-family: monospace; color: var(--amber); white-space: nowrap; }
   .t-time.cancelled { text-decoration: line-through; color: var(--red); }
   .t-num      { color: #fff; font-weight: 800; font-family: monospace; font-size: 13px; }
-  .t-blue     { color: var(--blue); font-size: 12px; font-weight: 600; word-break: break-word; }
-  .t-green    { color: var(--green); font-size: 12px; font-weight: 600; word-break: break-word; }
-  .t-dur      { color: #88ccff; font-size: 12px; font-weight: 600; }
-  .t-note-red { font-size: 11px; font-weight: 700; color: var(--red); line-height: 1.3; word-break: break-word; }
+  .t-dur      { color: #88ccff; font-size: 10px; font-weight: 600; }
   .t-note-dash { color: var(--dim); font-size: 12px; }
   .t-sub-blue  { color: var(--blue);  font-size: 10px; font-weight: 600; }
   .t-sub-green { color: var(--green); font-size: 10px; font-weight: 600; }
   .nodata     { padding: 14px 6px; color: var(--dim); font-size: 13px; }
-  .row-cancelled td { opacity: .55; }
+
+  tr.row-cancelled td { opacity: .6; }
+  tr.row-off td { opacity: .5; }
+  tr.past td { opacity: .38; }
+  tr.next td { background: #0c2418 !important; box-shadow: inset 3px 0 0 var(--green); }
+  tr.next .t-time { color: #5cffa8; }
+
+  .badge {
+    display: inline-block; padding: 2px 6px; border-radius: 4px;
+    font-size: 10px; font-weight: 800; white-space: nowrap; line-height: 1.3;
+  }
+  .badge-cancel { background: #3a0d0d; color: #ff6b6b; border: 1px solid #ff444455; }
+  .badge-delay  { background: #2a1600; color: #ffb347; border: 1px solid #ff9a3c55; }
+  .badge-change { background: #2a2400; color: #ffe066; border: 1px solid #ffd70055; }
+  .badge-ok     { background: #062616; color: #5cffa8; border: 1px solid #00e87a55; }
+  .badge-off    { background: #151c28; color: #8a9bb5; border: 1px solid #3a5570; }
+
+  /* Розкритий рядок з деталями поїзда */
+  tr.details-row td { background: #0a1322 !important; padding: 8px 8px 10px; opacity: 1 !important; }
+  .stops { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 3px 12px; font-size: 11px; }
+  .stp { display: flex; justify-content: space-between; gap: 6px; padding: 2px 0; border-bottom: 1px dashed #1c2a40; color: #aac8e8; }
+  .stp b { font-family: monospace; color: var(--amber); }
+  .stp.skip b { color: var(--dim); font-weight: 600; font-family: system-ui, sans-serif; font-size: 10px; }
+  .stp.cur { color: #fff; font-weight: 700; }
+  .d-head { font-size: 11px; color: #cfe3ff; margin-bottom: 6px; }
+  .d-note { margin-top: 7px; font-size: 11px; color: #ffe066; line-height: 1.4; }
+  .d-live { margin-top: 7px; font-size: 11px; color: #ffb347; line-height: 1.4; }
+  .d-link { color: var(--blue); text-decoration: underline; cursor: pointer; font-size: 11px; margin-top: 7px; margin-right: 12px; display: inline-block; }
 
   /* ROUTE mode */
   .route-box {
@@ -368,6 +415,22 @@
   .badge-m { background: #082010; color: var(--green); border: 2px solid #00e87a55; }
   .badge-k { background: #080e20; color: var(--blue);  border: 2px solid #5bc8ff55; }
   .route-info { font-size: 12px; color: #aac8e8; font-weight: 600; margin-left: 7px; }
+
+  /* CHANGES mode */
+  .chg-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 10px; font-size: 12px; line-height: 1.45;
+  }
+  .chg-card h3 { font-size: 12px; letter-spacing: .06em; margin-bottom: 6px; }
+  .chg-card.red h3 { color: #ff6b6b; }
+  .chg-card.amber h3 { color: var(--amber); }
+  .chg-card.orange h3 { color: #ffb347; }
+  .chg-card.green h3 { color: var(--green); }
+  .chg-item { padding: 6px 0; border-bottom: 1px dashed #1c2a40; }
+  .chg-item:last-child { border-bottom: 0; }
+  .chg-meta { color: var(--muted); font-size: 10px; margin-top: 2px; }
+  .chg-link { color: var(--blue); text-decoration: underline; cursor: pointer; font-size: 11px; }
+  .src { font-size: 10px; color: var(--dim); margin-top: 14px; line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -387,13 +450,14 @@
       <button onclick="dpMonth(+1)">&#8250;</button>
     </div>
     <div class="dpicker-days" id="dp-days"></div>
+    <div class="dpicker-legend">● дати, перевірені на сайті УЗ (зі скасуваннями)</div>
     <button id="dp-close" onclick="closeDatePicker()">Скасувати</button>
   </div>
 </div>
 
 <div id="alert">
-  <span id="alert-text">🔄 Підключення до сервера...</span>
-  <span id="alert-link" onclick="openTG()">📡 УЗ</span>
+  <span id="alert-text">🔄 Завантаження даних...</span>
+  <span id="alert-link" onclick="openLink(CHANNEL_URL)">📡 Канал УЗ</span>
 </div>
 
 <div id="status-bar">оновлення даних...</div>
@@ -405,8 +469,9 @@
   </div>
   <div id="main">
     <div class="tabs">
-      <button class="tab active" onclick="setMode('st')">📍 По станції</button>
-      <button class="tab"        onclick="setMode('rt')">🔀 Маршрут</button>
+      <button class="tab active" id="tab-st" onclick="setMode('st')">📍 Станція</button>
+      <button class="tab"        id="tab-rt" onclick="setMode('rt')">🔀 Маршрут</button>
+      <button class="tab"        id="tab-ch" onclick="setMode('ch')">⚠ Зміни<span id="chg-cnt" class="cnt" hidden>0</span></button>
     </div>
     <div id="content">
       <p class="nodata">⏳ Завантаження розкладу...</p>
@@ -416,519 +481,518 @@
 
 <script>
 // ════════════════════════════════════════════════════════
-// НАЛАШТУВАННЯ
-// Вставте сюди URL вашого GitHub Pages після деплою:
-const DATA_JSON_URL = "https://stanislavperec-ua.github.io/merefa-rozklad/data.json";
+// Джерела даних (генерує GitHub Actions: build_schedule.py, build_live.py)
+const SCHEDULE_URL = "schedule.json";
+const LIVE_URL     = "live.json";
+const UZ_TRAIN_URL = "https://swrailway.gov.ua/timetable/eltrain/?tid=";
+const UZ_SITE_URL  = "https://swrailway.gov.ua/timetable/eltrain/";
+const CHANNEL_URL  = "https://t.me/UZprymisky";
+const KHARKIV_SID = 2528, MEREFA_SID = 2538;
+const REFRESH_MS = 10 * 60 * 1000;   // автооновлення даних у відкритому застосунку
+const LIVE_FRESH_H = 3;              // затримка вважається актуальною для банера стільки годин
 // ════════════════════════════════════════════════════════
+
+// Запасний перелік станцій, якщо schedule.json ще не завантажено
+const STATIONS_FALLBACK = [
+  {sid:2528,name:"Харків-Пас."},{sid:2529,name:"Новоселівка"},{sid:2530,name:"Липовий Гай"},
+  {sid:2531,name:"Карачівка"},{sid:2532,name:"Покотилівка"},{sid:2533,name:"Науковий"},
+  {sid:3211,name:"Високий"},{sid:2767,name:"Зелений Гай"},{sid:2535,name:"Південний"},
+  {sid:2536,name:"Комарівка"},{sid:2539,name:"Артемівка"},{sid:2538,name:"Мерефа"}
+];
 
 // Telegram Web App
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
-function openTG() {
-  if (tg) tg.openLink("https://t.me/UZprymisky");
-  else window.open("https://t.me/UZprymisky", "_blank");
+function openLink(url) {
+  if (tg?.openLink) tg.openLink(url);
+  else window.open(url, "_blank");
 }
 
-// ── Дата ────────────────────────────────────────────────
+// ── Стан ────────────────────────────────────────────────
+let S = null;              // schedule.json
+let L = null;              // live.json
+let offline = false;
+let STATIONS = STATIONS_FALLBACK;
+let mode = "st", sel = 6, fr = 6, to = 0;
+let expanded = null;       // tid розкритого рядка
+let scrollToNext = true;
+let lastLoad = 0;
+let selectedDate = today();
+
+// ── Дата / час ──────────────────────────────────────────
 const DAYS   = ["неділя","понеділок","вівторок","середа","четвер","п'ятниця","субота"];
 const MONTHS = ["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"];
 const MONTHS_NOM = ["Січень","Лютий","Березень","Квітень","Травень","Червень","Липень","Серпень","Вересень","Жовтень","Листопад","Грудень"];
 
-// Поточна вибрана дата (за замовчуванням — сьогодні)
-let selectedDate = new Date();
-selectedDate.setHours(0,0,0,0);
+function today() { const d = new Date(); d.setHours(0,0,0,0); return d; }
+function keyOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+const todayKey = () => keyOf(today());
+function shortDate(key) { return key ? `${key.slice(8,10)}.${key.slice(5,7)}` : ""; }
+function fmtStamp(iso) {
+  if (!iso) return "н/д";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return `${d.getDate()} ${MONTHS[d.getMonth()].slice(0,3)}. ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+}
+function ageHours(iso) { const d = new Date(iso); return isNaN(d) ? 999 : (Date.now() - d.getTime()) / 36e5; }
+function nowMin() { const n = new Date(); return n.getHours()*60 + n.getMinutes(); }
+const toMin = s => { if (!s) return null; const [h,m] = s.split(":").map(Number); return h*60+m; };
+const fmt = m => m == null ? "--:--" : `${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+const dur = n => n >= 60 ? `${Math.floor(n/60)}г ${n%60}хв` : `${n}хв`;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 function formatDateBox(d) {
-  const today = new Date(); today.setHours(0,0,0,0);
-  const diff = Math.round((d - today) / 86400000);
+  const diff = Math.round((d - today()) / 86400000);
   let prefix = "";
   if (diff === 0) prefix = "Сьогодні · ";
   else if (diff === 1) prefix = "Завтра · ";
   else if (diff === -1) prefix = "Вчора · ";
-  return `📅 ${prefix}${d.getDate()} ${MONTHS[d.getMonth()]} · ${DAYS[d.getDay()]}`;
+  return `📅 ${prefix}${d.getDate()} ${MONTHS[d.getMonth()]}, ${DAYS[d.getDay()].slice(0, 2)}`;
 }
-
-function updateDateBox() {
-  document.getElementById("date-box").textContent = formatDateBox(selectedDate);
-}
-updateDateBox();
+function updateDateBox() { document.getElementById("date-box").textContent = formatDateBox(selectedDate); }
 
 // ── Date Picker ─────────────────────────────────────────
 let dpViewYear, dpViewMonth;
-
 function openDatePicker() {
-  const now = new Date();
-  dpViewYear  = now.getFullYear();
-  dpViewMonth = now.getMonth();
+  dpViewYear  = selectedDate.getFullYear();
+  dpViewMonth = selectedDate.getMonth();
   renderDpCalendar();
   document.getElementById("date-overlay").classList.add("open");
 }
-
-function closeDatePicker() {
-  document.getElementById("date-overlay").classList.remove("open");
-}
-
-function closeDatePickerOutside(e) {
-  if (e.target === document.getElementById("date-overlay")) closeDatePicker();
-}
-
+function closeDatePicker() { document.getElementById("date-overlay").classList.remove("open"); }
+function closeDatePickerOutside(e) { if (e.target === document.getElementById("date-overlay")) closeDatePicker(); }
 function dpMonth(dir) {
   dpViewMonth += dir;
   if (dpViewMonth > 11) { dpViewMonth = 0; dpViewYear++; }
   if (dpViewMonth < 0)  { dpViewMonth = 11; dpViewYear--; }
   renderDpCalendar();
 }
-
 function renderDpCalendar() {
-  document.getElementById("dp-month-label").textContent =
-    MONTHS_NOM[dpViewMonth] + " " + dpViewYear;
-
+  document.getElementById("dp-month-label").textContent = MONTHS_NOM[dpViewMonth] + " " + dpViewYear;
   const container = document.getElementById("dp-days");
   container.innerHTML = "";
-
-  // Заголовки днів тижня (пн-нд)
   ["Пн","Вт","Ср","Чт","Пт","Сб","Нд"].forEach(d => {
     const el = document.createElement("div");
-    el.className = "dpicker-day-hdr";
-    el.textContent = d;
-    container.appendChild(el);
+    el.className = "dpicker-day-hdr"; el.textContent = d; container.appendChild(el);
   });
-
-  const today = new Date(); today.setHours(0,0,0,0);
+  const t0 = today();
   const firstDay = new Date(dpViewYear, dpViewMonth, 1);
-  // Зміщення: пн=0, вт=1... нд=6
   let startOffset = firstDay.getDay() - 1;
   if (startOffset < 0) startOffset = 6;
-
   const daysInMonth = new Date(dpViewYear, dpViewMonth+1, 0).getDate();
-  const daysInPrev  = new Date(dpViewYear, dpViewMonth,   0).getDate();
-
-  // Попередній місяць
+  const daysInPrev  = new Date(dpViewYear, dpViewMonth, 0).getDate();
   for (let i = startOffset - 1; i >= 0; i--) {
     const el = document.createElement("div");
-    el.className = "dpicker-day other-month";
-    el.textContent = daysInPrev - i;
-    container.appendChild(el);
+    el.className = "dpicker-day other-month"; el.textContent = daysInPrev - i; container.appendChild(el);
   }
-
-  // Поточний місяць
   for (let d = 1; d <= daysInMonth; d++) {
     const date = new Date(dpViewYear, dpViewMonth, d);
     const el = document.createElement("div");
     el.className = "dpicker-day";
-    if (date.getTime() === today.getTime()) el.classList.add("today");
+    if (date.getTime() === t0.getTime()) el.classList.add("today");
     if (date.getTime() === selectedDate.getTime()) el.classList.add("selected");
+    if (S?.days?.[keyOf(date)]) el.classList.add("has-data");
     el.textContent = d;
     el.onclick = () => selectDate(date);
     container.appendChild(el);
   }
-
-  // Наступний місяць (заповнюємо до повного тижня)
   const total = startOffset + daysInMonth;
   const remainder = total % 7 === 0 ? 0 : 7 - (total % 7);
   for (let d = 1; d <= remainder; d++) {
     const el = document.createElement("div");
-    el.className = "dpicker-day other-month";
-    el.textContent = d;
-    container.appendChild(el);
+    el.className = "dpicker-day other-month"; el.textContent = d; container.appendChild(el);
   }
 }
-
 function selectDate(date) {
-  selectedDate = new Date(date);
-  selectedDate.setHours(0,0,0,0);
-  updateDateBox();
-  closeDatePicker();
-  renderContent(); // перемалювати розклад (скасування можуть відрізнятись)
+  selectedDate = new Date(date); selectedDate.setHours(0,0,0,0);
+  expanded = null; scrollToNext = true;
+  updateDateBox(); closeDatePicker(); renderAll();
 }
 
-// ── Розклад (базові дані) ────────────────────────────────
-const STATIONS = [
-  "Харків-Пас.","Новоселівка","Липовий Гай","Карачівка",
-  "Покотилівка","Науковий","Високий","Зелений Гай",
-  "Південний","Комарівка","Артемівка","Мерефа"
-];
-const OFF = [0,5,10,15,18,22,25,28,31,34,38,43]; // зміщення від Харкова (хв)
+// ── Завантаження даних ──────────────────────────────────
+async function fetchJson(url) {
+  const r = await fetch(`${url}?t=${Math.floor(Date.now()/60000)}`, { cache: "no-store" });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+function lsGet(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 
-const m2   = (h,m) => h*60+m;
-const hhmm = t => {
-  if (t == null) return "--:--";
-  const h = Math.floor(Math.round(t)/60)%24, mn = Math.round(t)%60;
-  return `${String(h).padStart(2,"0")}:${String(mn).padStart(2,"0")}`;
-};
-const dstr = d => {
-  const h = Math.floor(d/60), m = Math.round(d%60);
-  return h > 0 ? `${h}г ${m}хв` : `${m}хв`;
-};
-
-// Розраховує час зупинок для поїзда → Мерефа
-const calcM = (kh, vys) => {
-  const sc = (vys - kh) / OFF[6];
-  return STATIONS.map((_,i) => i <= 6
-    ? Math.round(kh + OFF[i]*sc)
-    : Math.round(vys + (OFF[i]-OFF[6])));
-};
-// Розраховує час зупинок для поїзда → Харків
-const calcK = (vys, kh) => {
-  const sc = (kh - vys) / OFF[6];
-  return STATIONS.map((_,i) => i <= 6
-    ? Math.round(vys + (OFF[6]-OFF[i])*sc)
-    : Math.round(vys - (OFF[i]-OFF[6])));
-};
-
-// Підтверджені зупинки поїзда №6685
-const C6685 = [
-  m2(7,13),m2(7,18),m2(7,23),m2(7,28),m2(7,31),m2(7,35),
-  m2(7,38),m2(7,41),m2(7,44),m2(7,47),m2(7,51),m2(7,56)
-];
-
-// Базовий розклад → Мерефа
-const BASE_RM = [
-  {num:"6825", dest:"Лозова",    kh:m2(6,47),  vys:m2(7,8)},
-  {num:"6685", dest:"Берестин",  kh:m2(7,13),  vys:m2(7,38), stops:C6685},
-  {num:"6513",mist:572, dest:"Лиманівка", kh:m2(8,40),  vys:m2(9,9)},
-  {num:"6687", dest:"Берестин",  kh:m2(8,46),  vys:m2(9,20)},
-  {num:"6853",mist:794, dest:"Лиманівка", kh:m2(12,22), vys:m2(12,49)},
-  {num:"6691", dest:"Берестин",  kh:m2(13,42), vys:m2(14,7)},
-  {num:"7001",mist:1011, dest:"Лозова",    kh:m2(16,0),  vys:m2(16,27)},
-  {num:"6525",mist:1081, dest:"Лозова",    kh:m2(17,9),  vys:m2(17,36)},
-  {num:"6705", dest:"Зміїв",     kh:m2(17,17), vys:m2(17,42)},
-  {num:"6693", dest:"Берестин",  kh:m2(17,50), vys:m2(18,27)},
-  {num:"6527",mist:1144, dest:"Лозова",    kh:m2(18,10), vys:m2(18,38)},
-  {num:"6697", dest:"Берестин",  kh:m2(20,22), vys:m2(20,47)},
-  {num:"6529",mist:1282, dest:"Біляївка",  kh:m2(20,30), vys:m2(20,57)},
-];
-
-// Базовий розклад → Харків
-const BASE_RK = [
-  {num:"6506", orig:"Златопіль",  vys:m2(5,58),  kh:m2(6,25)},
-  {num:"6682", orig:"Власівка",   vys:m2(6,14),  kh:m2(6,43)},
-  {num:"6508", orig:"Біляївка",   vys:m2(6,44),  kh:m2(7,10)},
-  {num:"6684", orig:"Берестин",   vys:m2(6,58),  kh:m2(7,28)},
-  {num:"6702", orig:"Зміїв",      vys:m2(7,18),  kh:m2(7,45)},
-  {num:"6512", orig:"Лозова",     vys:m2(8,16),  kh:m2(8,43)},
-  {num:"6678", orig:"Берестин",   vys:m2(9,43),  kh:m2(10,9)},
-  {num:"6852", orig:"Лозова",     vys:m2(10,34), kh:m2(11,2)},
-  {num:"6686", orig:"Берестин",   vys:m2(11,1),  kh:m2(11,27)},
-  {num:"6516", orig:"Лозова",     vys:m2(12,3),  kh:m2(12,31)},
-  {num:"6688", orig:"Берестин",   vys:m2(13,3),  kh:m2(13,35)},
-  {num:"6690", orig:"Берестин",   vys:m2(16,7),  kh:m2(16,35)},
-  {num:"6524", orig:"Лиманівка",  vys:m2(18,53), kh:m2(19,21)},
-  {num:"6694", orig:"Берестин",   vys:m2(19,24), kh:m2(19,46)},
-  {num:"6856", orig:"Лиманівка",  vys:m2(20,38), kh:m2(21,2)},
-];
-
-// ── Динамічні примітки з data.json ──────────────────────
-let NOTES = {}; // { "6686": { cancelled: true, note: "❌ Скасовано" } }
-
-async function loadData() {
-  const statusEl = document.getElementById("status-bar");
-  const alertEl  = document.getElementById("alert-text");
-  const alertDiv = document.getElementById("alert");
-
-  try {
-    const resp = await fetch(DATA_JSON_URL + "?t=" + Date.now(), { cache: "no-store" });
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const data = await resp.json();
-
-    // Застосовуємо примітки з cancellations та changes
-    NOTES = {};
-    const cancelled = data.cancellations || {};
-    const changed   = data.changes || {};
-    Object.keys(cancelled).forEach(num => {
-      NOTES[num] = { cancelled: true, note: "❌ Скасовано" };
-    });
-    Object.keys(changed).forEach(num => {
-      if (!NOTES[num]) NOTES[num] = { cancelled: true, note: "❌ Не курсує" };
-    });
-
-    // Банер
-    const allAffected = [...Object.keys(cancelled), ...Object.keys(changed)];
-    if (allAffected.length > 0) {
-      alertDiv.className = "";
-      alertEl.innerHTML = `<b>⚠</b> Не курсують: ${allAffected.join(", ")}`;
-    } else if (data.alert) {
-      alertDiv.className = "";
-      alertEl.innerHTML = `<b>⚠</b> ${data.alert}`;
-    } else {
-      alertDiv.className = "ok";
-      alertEl.innerHTML = `<b>✓</b> Змін немає. Розклад актуальний.`;
-    }
-
-    // Статус
-    if (data.updated) {
-      const d = new Date(data.updated);
-      statusEl.textContent =
-        `✓ Оновлено: ${d.getDate()} ${MONTHS[d.getMonth()]} о ${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;
-      statusEl.className = "fresh";
-    }
-
-  } catch(e) {
-    console.warn("data.json недоступний:", e.message);
-    // Fallback — вбудовані примітки
-    NOTES = {
-      "6686": { cancelled: true,  note: "❌ Скасовано" },
-      "6684": { cancelled: false, note: "⚠ До Водолаги" },
-    };
-    alertDiv.className = "";
-    alertEl.innerHTML = `<b>⚠ Офлайн-режим.</b> Показано кешований розклад.`;
-    statusEl.textContent = "⚠ Немає з'єднання із сервером";
-    statusEl.className = "error";
-  }
-
+async function loadAll() {
+  lastLoad = Date.now();
+  offline = false;
+  try { S = await fetchJson(SCHEDULE_URL); lsSet("schedule.v2", S); }
+  catch (e) { console.warn("schedule.json:", e.message); S = lsGet("schedule.v2"); offline = true; }
+  try { L = await fetchJson(LIVE_URL); lsSet("live.v2", L); }
+  catch (e) { console.warn("live.json:", e.message); L = lsGet("live.v2") || { items: [] }; }
+  if (S?.stations?.length) STATIONS = S.stations;
   buildSidebar();
-  renderContent();
+  renderAll();
 }
+setInterval(loadAll, REFRESH_MS);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() - lastLoad > 5 * 60 * 1000) loadAll();
+});
 
-// ── Будуємо масиви поїздів з примітками ─────────────────
-function buildTrains() {
-  const TM = BASE_RM.map(t => {
-    const n = NOTES[t.num] || {};
-    return { ...t, dir:"m",
-      times: t.stops || calcM(t.kh, t.vys),
-      anch: !!t.stops,
-      cancelled: !!n.cancelled,
-      note: n.note || ""
-    };
+// ── Вибірка поїздів на дату ─────────────────────────────
+function dayInfo(key) {
+  if (!S?.trains) return null;
+  const day = S.days?.[key];
+  if (day) return { verified: true, running: day.running || [], cancelled: day.cancelled || [], off: day.off || [] };
+  const running = Object.keys(S.trains).filter(tid => {
+    const t = S.trains[tid];
+    return (t.valid_from || "0000") <= key && key <= (t.valid_to || "9999");
   });
-  const TK = BASE_RK.map(t => {
-    const n = NOTES[t.num] || {};
-    return { ...t, dir:"k",
-      times: calcK(t.vys, t.kh),
-      cancelled: !!n.cancelled,
-      note: n.note || ""
-    };
-  });
-  return { TM, TK };
+  return { verified: false, running, cancelled: [], off: [] };
 }
-
-// Підтверджена зупинка: Харків (si=0) і Високий (si=6) — завжди ★
-const isAnch = (dir, si, t) =>
-  dir === "k" ? (si===0 || si===6) : (si===0 || si===6 || t.anch);
+function liveFor(num, key) {
+  if (!L?.items) return null;
+  return L.items.find(i => i.num === num && String(i.time).startsWith(key)) || null;
+}
+function trainsFor(key) {
+  const info = dayInfo(key);
+  if (!info) return { list: [], verified: false };
+  const list = [];
+  const push = (tid, status, note) => {
+    const t = S.trains[tid]; if (!t) return;
+    list.push({ tid, ...t, status, note: note || "", live: liveFor(t.num, key) });
+  };
+  info.running.forEach(tid => push(tid, "ok"));
+  info.cancelled.forEach(c => push(c.tid, "cancelled", c.note));
+  info.off.forEach(c => push(c.tid, "off", c.note));
+  return { list, verified: info.verified };
+}
+const stopAt = (t, sid) => t.stops?.[String(sid)] || null;
+const depAt  = (t, sid) => { const s = stopAt(t, sid); return s ? toMin(s.dep || s.arr) : null; };
+const arrAt  = (t, sid) => { const s = stopAt(t, sid); return s ? toMin(s.arr || s.dep) : null; };
+const isCancelled = t => t.status === "cancelled" || t.live?.kind === "cancel";
 
 // ── Sidebar ──────────────────────────────────────────────
-let mode = "st", sel = 6, fr = 6, to = 0;
-
 function buildSidebar() {
   const rail = document.getElementById("rail");
   rail.innerHTML = "";
-  STATIONS.forEach((name, i) => {
-    const isEnd = i===0 || i===11;
-    const act   = mode==="st" && sel===i;
+  const last = STATIONS.length - 1;
+  STATIONS.forEach((st, i) => {
+    const isEnd = i === 0 || i === last;
+    const act   = mode === "st" && sel === i;
     const div   = document.createElement("div");
-    div.className = "st-item" + (act?" active":"") + (isEnd?" st-end":"");
-    div.onclick = () => {
-      sel = i; mode = "st";
-      buildSidebar(); renderContent();
-      document.querySelectorAll(".tab").forEach((t,ti) =>
-        t.classList.toggle("active", ti===0));
-    };
+    div.className = "st-item" + (act ? " active" : "") + (isEnd ? " st-end" : "");
+    div.onclick = () => { sel = i; expanded = null; scrollToNext = true; setMode("st"); };
     const ds  = isEnd ? 12 : 8;
     const dot = document.createElement("div");
     dot.className = "st-dot";
     dot.style.cssText = [
-      `width:${ds}px`, `height:${ds}px`,
-      `margin-left:${isEnd?-6:-4}px`,
-      `background:${act?"#00ff88":isEnd?"#ffd700":"#253550"}`,
-      `border:2px solid ${act?"#00ff88":isEnd?"#ffd700":"#3a5570"}`,
+      `width:${ds}px`, `height:${ds}px`, `margin-left:${isEnd ? -6 : -4}px`,
+      `background:${act ? "#00ff88" : isEnd ? "#ffd700" : "#253550"}`,
+      `border:2px solid ${act ? "#00ff88" : isEnd ? "#ffd700" : "#3a5570"}`,
       act ? "box-shadow:0 0 7px #00ff88" : isEnd ? "box-shadow:0 0 5px #ffd70077" : ""
     ].join(";");
     const span = document.createElement("span");
-    span.className   = "st-name";
-    span.textContent = name;
-    div.appendChild(dot);
-    div.appendChild(span);
-    rail.appendChild(div);
+    span.className = "st-name"; span.textContent = st.name;
+    div.appendChild(dot); div.appendChild(span); rail.appendChild(div);
   });
 }
 
-// ── Допоміжні клітинки ───────────────────────────────────
-function noteCell(t) {
-  if (!t.note) return '<span class="t-note-dash">—</span>';
-  return `<span class="t-note-red">${t.note}</span>`;
-}
-function timeCell(t, si, dir) {
-  const ok = isAnch(dir, si, t);
-  const star = ok ? "★" : "~";
-  let html = `<span class="t-time${t.cancelled?" cancelled":""}">${star}${hhmm(t.time)}</span>`;
+// ── Банер і статус ───────────────────────────────────────
+function renderBanner(key, res) {
+  const alertDiv = document.getElementById("alert");
+  const alertEl  = document.getElementById("alert-text");
+  const statusEl = document.getElementById("status-bar");
+  if (!S) {
+    alertDiv.className = "err";
+    alertEl.innerHTML = "<b>✖</b> Розклад недоступний: немає з'єднання і збереженої копії.";
+    statusEl.textContent = "⚠ Немає з'єднання із сервером"; statusEl.className = "error";
+    return;
+  }
+  const isToday = key === todayKey();
+  const cancelled = res.list.filter(isCancelled);
+  // У банері: лише свіжі затримки (повідомлення не старше LIVE_FRESH_H годин); у таблиці позначки лишаються
+  const delays = isToday
+    ? res.list.filter(t => t.status === "ok" && t.live?.kind === "delay" && ageHours(t.live.time) < LIVE_FRESH_H)
+    : [];
+  let cls = "ok", html = "<b>✓</b> Змін немає. Розклад актуальний.";
+  if (offline) {
+    cls = "warn"; html = `<b>⚠ Офлайн.</b> Показано збережений розклад від ${fmtStamp(S.generated)}.`;
+  } else if (cancelled.length) {
+    cls = ""; html = `<b>❌</b> Скасовано ${shortDate(key)}: ${cancelled.map(t => t.num).join(", ")}`;
+  } else if (delays.length) {
+    cls = "warn";
+    html = `<b>⏱</b> Затримки: ${delays.map(t => t.num + (t.live.minutes ? ` +${t.live.minutes} хв` : "")).join(", ")}`;
+  } else if (!res.verified) {
+    cls = "info"; html = `<b>ℹ</b> Дата поза перевіреним періодом (до ${shortDate(S.horizon?.to)}): плановий розклад.`;
+  }
+  alertDiv.className = cls; alertEl.innerHTML = html;
 
+  const schedAge = ageHours(S.generated);
+  statusEl.textContent = `Розклад УЗ: ${fmtStamp(S.generated)} · канал УЗ: ${L?.generated ? fmtStamp(L.generated) : "н/д"}`;
+  statusEl.className = offline ? "error" : schedAge > 12 ? "stale" : "fresh";
+
+  const cnt = document.getElementById("chg-cnt");
+  const n = cancelled.length + delays.length;
+  cnt.hidden = n === 0; cnt.textContent = n;
+}
+
+// ── Спільні клітинки ─────────────────────────────────────
+function timeHtml(t, m) {
+  return `<span class="t-time${isCancelled(t) ? " cancelled" : ""}">${fmt(m)}</span>`;
+}
+function noteHtml(t) {
+  if (t.status === "cancelled") return `<span class="badge badge-cancel">Скасовано</span>`;
+  if (t.status === "off") return `<span class="badge badge-off">Не курсує</span>`;
+  if (t.live) {
+    const k = t.live.kind;
+    if (k === "cancel") return `<span class="badge badge-cancel">Скасовано</span>`;
+    if (k === "delay")  return `<span class="badge badge-delay">⏱ ${t.live.minutes ? "+" + t.live.minutes + " хв" : "затримка"}</span>`;
+    if (k === "change") return `<span class="badge badge-change">Зміни</span>`;
+    if (k === "resume") return `<span class="badge badge-ok">За графіком</span>`;
+  }
+  if (t.notes?.length) return `<span class="badge badge-change">ℹ Зміни</span>`;
+  return `<span class="t-note-dash">·</span>`;
+}
+function rowHtml(t, cells, opts) {
+  const cls = ["clickable",
+    t.status === "cancelled" ? "row-cancelled" : "",
+    t.status === "off" ? "row-off" : "",
+    opts.past ? "past" : "",
+    opts.next ? "next" : ""
+  ].filter(Boolean).join(" ");
+  let html = `<tr class="${cls}" onclick="toggleRow('${t.tid}')">${cells.map(c => `<td>${c}</td>`).join("")}</tr>`;
+  if (expanded === t.tid) html += detailsRow(t, cells.length, opts.curSid);
+  return html;
+}
+function detailsRow(t, span, curSid) {
+  const order = t.dir === "k" ? [...STATIONS].reverse() : STATIONS;   // у порядку прямування
+  // Обидві колонки як на сайті УЗ: прибуття / відправлення (на кінцевих одна з них відсутня)
+  const stops = order.map(st => {
+    const s = stopAt(t, st.sid);
+    const cur = st.sid === curSid ? " cur" : "";
+    if (!s) return `<div class="stp skip${cur}"><span>${esc(st.name)}</span><b>без зупинки</b></div>`;
+    const tm = s.arr && s.dep && s.arr !== s.dep ? `${esc(s.arr)} → ${esc(s.dep)}` : esc(s.dep || s.arr);
+    return `<div class="stp${cur}"><span>${esc(st.name)}</span><b>${tm}</b></div>`;
+  }).join("");
+  let extra = "";
+  (t.notes || []).forEach(n => {
+    extra += `<div class="d-note">📋 ${esc(n.text)}${n.from ? ` <span class="chg-meta">(діє ${shortDate(n.from)}–${shortDate(n.to || "")})</span>` : ""}</div>`;
+  });
+  if (t.note && t.status !== "ok") extra += `<div class="d-note">${esc(t.note)}</div>`;
+  if (t.live) extra += `<div class="d-live">📡 ${esc(t.live.time.slice(11,16))} · ${esc(t.live.text)}</div>`;
+  const links = `<span class="d-link" onclick="event.stopPropagation();openLink('${UZ_TRAIN_URL}${t.tid}')">Поїзд на сайті УЗ ↗</span>`
+    + (t.live?.link ? `<span class="d-link" onclick="event.stopPropagation();openLink('${esc(t.live.link)}')">Пост у каналі ↗</span>` : "");
+  return `<tr class="details-row"><td colspan="${span}">
+    <div class="d-head"><b>№${esc(t.num)}</b> ${esc(t.route)} · ${esc(t.days || "")} · діє ${shortDate(t.valid_from)}–${shortDate(t.valid_to)}<br>
+      <span class="chg-meta">Зупинки за розкладом УЗ: прибуття → відправлення</span></div>
+    <div class="stops">${stops}</div>${extra}<div>${links}</div>
+  </td></tr>`;
+}
+function toggleRow(tid) {
+  expanded = expanded === tid ? null : tid;
+  scrollToNext = false;
+  renderAll();
+}
+function legendHtml() {
+  return `<div class="legend">
+    Час зупинки з офіційного розкладу УЗ · натисніть на рейс, щоб побачити всі зупинки<br>
+    <span class="badge badge-cancel">Скасовано</span> <span class="badge badge-delay">⏱ затримка</span>
+    <span class="badge badge-change">Зміни</span> <span class="badge badge-off">Не курсує</span>
+  </div>`;
+}
+
+// ── Режим «Станція» ──────────────────────────────────────
+function renderStation(key, res) {
+  const st = STATIONS[sel];
+  const sid = st.sid;
+  const isToday = key === todayKey();
+  const nm = nowMin();
+  const last = STATIONS.length - 1;
+
+  const rows = dir => res.list
+    .filter(t => t.dir === dir && stopAt(t, sid))
+    .map(t => ({ ...t, dep: depAt(t, sid), end: arrAt(t, dir === "m" ? MEREFA_SID : KHARKIV_SID) }))
+    .filter(t => t.dep != null)
+    .sort((a, b) => a.dep - b.dep);
+
+  let html = `<h2>${esc(st.name)}</h2>
+    <p class="hint">${res.verified ? "Розклад на " + shortDate(key) + " перевірено на сайті УЗ" : "Плановий розклад за терміном дії поїздів"}</p>
+    ${legendHtml()}`;
+
+  const section = (dir, list, color, title, colHead, endHead) => {
+    const next = isToday ? list.find(t => t.status === "ok" && !isCancelled(t) && t.dep >= nm) : null;
+    html += `
+      <div class="dir-head">
+        <div class="dir-bar" style="background:${color}"></div>
+        <span class="dir-lbl" style="color:${color}">${title}</span>
+        <span class="dir-cnt">${list.length} рейс.</span>
+      </div>
+      <div class="tbl-wrap"><table>
+        <colgroup><col class="col-time"><col class="col-num"><col class="col-end"><col class="col-note"></colgroup>
+        <thead><tr><th>Відпр.</th><th>№ / ${colHead}</th><th>${endHead}</th><th>Прим.</th></tr></thead>
+        <tbody>`;
+    if (!list.length) html += `<tr><td colspan="4" class="nodata">Немає рейсів</td></tr>`;
+    list.forEach(t => {
+      const sub = dir === "m" ? t.to : t.from;
+      html += rowHtml(t, [
+        timeHtml(t, t.dep),
+        `<span class="t-num">${esc(t.num)}</span><br><span class="${dir === "m" ? "t-sub-green" : "t-sub-blue"}">${esc(sub)}</span>`,
+        timeHtml(t, t.end),
+        noteHtml(t)
+      ], { past: isToday && t.status === "ok" && t.dep < nm, next: next && next.tid === t.tid, curSid: sid });
+    });
+    html += `</tbody></table></div>`;
+  };
+
+  if (sel > 0) section("k", rows("k"), "#5bc8ff", "→ НА ХАРКІВ-ПАС.", "Звідки", "Харків");
+  if (sel < last) section("m", rows("m"), "#00e87a", "→ НА МЕРЕФУ", "Кінцева", "Мерефа");
+  return html;
+}
+
+// ── Режим «Маршрут» ──────────────────────────────────────
+function renderRoute(key, res) {
+  const opts = v => STATIONS.map((s, i) => `<option value="${i}"${i === v ? " selected" : ""}>${esc(s.name)}</option>`).join("");
+  let html = `
+    <div class="route-box">
+      <div class="rlbl">ОБЕРІТЬ МАРШРУТ</div>
+      <div class="route-row">
+        <div class="sel-wrap"><label>ВІД</label><select onchange="fr=+this.value;expanded=null;scrollToNext=true;renderAll()">${opts(fr)}</select></div>
+        <button id="btn-swap" onclick="let t=fr;fr=to;to=t;expanded=null;scrollToNext=true;renderAll()">⇄</button>
+        <div class="sel-wrap"><label>ДО</label><select onchange="to=+this.value;expanded=null;scrollToNext=true;renderAll()">${opts(to)}</select></div>
+      </div>
+    </div>`;
+  if (fr === to) return html + `<p class="nodata">Оберіть різні станції</p>`;
+
+  const going = fr < to;
+  const a = STATIONS[fr].sid, b = STATIONS[to].sid;
+  const isToday = key === todayKey();
+  const nm = nowMin();
+  const rd = res.list
+    .filter(t => t.dir === (going ? "m" : "k") && stopAt(t, a) && stopAt(t, b))
+    .map(t => ({ ...t, dep: depAt(t, a), arr: arrAt(t, b) }))
+    .filter(t => t.dep != null && t.arr != null)
+    .sort((x, y) => x.dep - y.dep);
+  const next = isToday ? rd.find(t => t.status === "ok" && !isCancelled(t) && t.dep >= nm) : null;
+
+  html += `
+    <div style="margin-bottom:10px">
+      <span class="dir-badge ${going ? "badge-m" : "badge-k"}">${going ? "→ МЕРЕФА" : "→ ХАРКІВ"}</span>
+      <span class="route-info">${esc(STATIONS[fr].name)} → ${esc(STATIONS[to].name)}</span>
+    </div>
+    ${legendHtml()}
+    <div class="tbl-wrap"><table>
+      <colgroup><col class="col-time"><col class="col-time"><col class="col-num"><col class="col-note"></colgroup>
+      <thead><tr><th>Відпр.</th><th>Приб.</th><th>№ / ${going ? "Кінцева" : "Звідки"}</th><th>Прим.</th></tr></thead>
+      <tbody>`;
+  if (!rd.length) html += `<tr><td colspan="4" class="nodata">Немає рейсів</td></tr>`;
+  rd.forEach(t => {
+    html += rowHtml(t, [
+      timeHtml(t, t.dep),
+      timeHtml(t, t.arr),
+      `<span class="t-num">${esc(t.num)}</span> <span class="t-dur">${dur(t.arr - t.dep)}</span><br><span class="${going ? "t-sub-green" : "t-sub-blue"}">${esc(going ? t.to : t.from)}</span>`,
+      noteHtml(t)
+    ], { past: isToday && t.status === "ok" && t.dep < nm, next: next && next.tid === t.tid, curSid: a });
+  });
+  html += `</tbody></table></div>`;
+  return html;
+}
+
+// ── Режим «Зміни» ────────────────────────────────────────
+function renderChanges(key, res) {
+  const isToday = key === todayKey();
+  let html = "";
+
+  const cancelled = res.list.filter(t => t.status === "cancelled");
+  const off = res.list.filter(t => t.status === "off");
+  if (cancelled.length || off.length) {
+    html += `<div class="chg-card red"><h3>❌ СКАСОВАНО ${shortDate(key)}</h3>`;
+    [...cancelled, ...off].forEach(t => {
+      html += `<div class="chg-item"><b>№${esc(t.num)}</b> ${esc(t.route)}<div class="chg-meta">${esc(t.note)}</div></div>`;
+    });
+    html += `</div>`;
+  } else {
+    html += `<div class="chg-card green"><h3>✓ ${shortDate(key)}: СКАСУВАНЬ НЕМАЄ</h3>
+      ${res.verified ? "Усі поїзди за терміном дії присутні в розкладі УЗ на цю дату." : "Дата поза перевіреним періодом: показано плановий розклад за терміном дії поїздів."}</div>`;
+  }
+
+  // Повідомлення УЗ «Зміни руху» по всіх поїздах
+  const notes = [];
+  const seen = new Set();
+  Object.entries(S.trains).forEach(([tid, t]) => {
+    (t.notes || []).forEach(n => {
+      if (seen.has(n.text)) return;
+      seen.add(n.text);
+      notes.push({ ...n, tid, num: t.num });
+    });
+  });
+  notes.sort((a, b) => (b.to || "").localeCompare(a.to || ""));
+  if (notes.length) {
+    html += `<div class="chg-card amber"><h3>📋 ПОВІДОМЛЕННЯ УЗ ПРО ЗМІНИ РУХУ</h3>`;
+    notes.forEach(n => {
+      html += `<div class="chg-item">${esc(n.text)}
+        <div class="chg-meta">Опубліковано ${shortDate(n.from)}–${shortDate(n.to)} ·
+        <span class="chg-link" onclick="openLink('${UZ_TRAIN_URL}${n.tid}')">поїзд №${esc(n.num)} на сайті УЗ ↗</span></div></div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Оперативні повідомлення каналу
+  const items = (L?.items || []).filter(i => String(i.time).startsWith(key));
+  html += `<div class="chg-card orange"><h3>📡 КАНАЛ УЗ «ПРИМІСЬКІ ПОЇЗДИ»${isToday ? " · СЬОГОДНІ" : " · " + shortDate(key)}</h3>`;
+  if (!items.length) {
+    html += `<div class="chg-item chg-meta">${isToday ? "Повідомлень про наші поїзди за сьогодні немає." : "Оперативні повідомлення зберігаються лише за поточний день."}</div>`;
+  }
+  items.forEach(i => {
+    const icon = { delay: "⏱", cancel: "❌", resume: "✅", change: "🔁" }[i.kind] || "ℹ️";
+    const mins = i.minutes ? ` <b>+${i.minutes} хв</b>` : "";
+    html += `<div class="chg-item">${icon} <b>${esc(String(i.time).slice(11,16))}</b> · №${esc(i.num)}${mins}<br>
+      <span style="color:#cfe3ff">${esc(i.text)}</span>
+      <div class="chg-meta"><span class="chg-link" onclick="openLink('${esc(i.link)}')">пост у каналі ↗</span></div></div>`;
+  });
+  html += `</div>`;
+
+  html += `<div class="src">
+    Джерела: офіційний розклад <span class="chg-link" onclick="openLink('${UZ_SITE_URL}')">swrailway.gov.ua</span>
+    (оновлено ${fmtStamp(S.generated)}, перевірені дати ${shortDate(S.horizon?.from)}–${shortDate(S.horizon?.to)}) ·
+    канал <span class="chg-link" onclick="openLink('${CHANNEL_URL}')">t.me/UZprymisky</span>
+    (оновлено ${L?.generated ? fmtStamp(L.generated) : "н/д"}).<br>
+    Застосунок неофіційний. Перед поїздкою перевіряйте інформацію на ресурсах УЗ.
+  </div>`;
   return html;
 }
 
 // ── Головний рендер ──────────────────────────────────────
-function renderContent() {
-  const { TM, TK } = buildTrains();
+function renderAll() {
+  const key = keyOf(selectedDate);
   const c = document.getElementById("content");
+  if (!S) {
+    renderBanner(key, { list: [], verified: false });
+    c.innerHTML = `<p class="nodata">Не вдалося завантажити розклад. Перевірте з'єднання і відкрийте застосунок ще раз.</p>`;
+    return;
+  }
+  const res = trainsFor(key);
+  renderBanner(key, res);
+  if (mode === "st") c.innerHTML = renderStation(key, res);
+  else if (mode === "rt") c.innerHTML = renderRoute(key, res);
+  else c.innerHTML = renderChanges(key, res);
 
-  // ── Режим «По станції» ──────────────────────────────
-  if (mode === "st") {
-    const stK = TK.map(t => ({...t, time:t.times[sel]})).sort((a,b) => a.time-b.time);
-    const stM = TM.map(t => ({...t, time:t.times[sel]})).sort((a,b) => a.time-b.time);
-
-    let html = `
-      <h2>${STATIONS[sel]}</h2>
-      <p class="hint">Оберіть станцію в меню зліва</p>
-      <div class="legend">
-        <span class="ok">★</span> = дані УЗ &nbsp;·&nbsp;
-        <b>~</b> = розрахунок (±3 хв)
-      </div>`;
-
-    // → Харків
-    if (sel > 0) {
-      html += `
-        <div class="dir-head">
-          <div class="dir-bar" style="background:#5bc8ff"></div>
-          <span class="dir-lbl" style="color:#5bc8ff">→ НА ХАРКІВ-ПАС.</span>
-          <span class="dir-cnt">${stK.length} рейс.</span>
-        </div>
-        <div class="tbl-wrap"><table>
-          <colgroup>
-            <col class="col-time"><col class="col-num"><col class="col-end"><col class="col-note">
-          </colgroup>
-          <thead>
-            <tr><th>Відправл.</th><th>№ / Звідки</th><th>Харків</th><th>Прим.</th></tr>
-          </thead>
-          <tbody>`;
-      stK.forEach(t => {
-        html += `
-          <tr${t.cancelled?' class="row-cancelled"':''}>
-            <td>${timeCell(t, sel, "k")}</td>
-            <td><span class="t-num">${t.num}</span><br><span class="t-sub-blue">${t.orig}</span></td>
-            <td><span class="t-time${t.cancelled?" cancelled":""}">★${hhmm(t.kh)}</span></td>
-            <td>${noteCell(t)}</td>
-          </tr>`;
-      });
-      html += `</tbody></table></div>`;
-    }
-
-    // → Мерефа
-    if (sel < 11) {
-      html += `
-        <div class="dir-head">
-          <div class="dir-bar" style="background:#00e87a"></div>
-          <span class="dir-lbl" style="color:#00e87a">→ НА МЕРЕФУ</span>
-          <span class="dir-cnt">${stM.length} рейс.</span>
-        </div>
-        <div class="tbl-wrap"><table>
-          <colgroup>
-            <col class="col-time"><col class="col-num"><col class="col-end"><col class="col-note">
-          </colgroup>
-          <thead>
-            <tr><th>Відправл.</th><th>№ / Кінцева</th><th>Мерефа</th><th>Прим.</th></tr>
-          </thead>
-          <tbody>`;
-      stM.forEach(t => {
-        html += `
-          <tr${t.cancelled?' class="row-cancelled"':''}>
-            <td>${timeCell(t, sel, "m")}</td>
-            <td><span class="t-num">${t.num}</span><br><span class="t-sub-green">${t.dest}</span></td>
-            <td><span class="t-time${t.cancelled?" cancelled":""}">${t.anch?"★":"~"}${hhmm(t.times[11])}</span></td>
-            <td>${noteCell(t)}</td>
-          </tr>`;
-      });
-      html += `</tbody></table></div>`;
-    }
-
-    c.innerHTML = html;
-
-  // ── Режим «Маршрут» ────────────────────────────────
-  } else {
-    const opts1 = STATIONS.map((n,i) =>
-      `<option value="${i}"${i===fr?" selected":""}>${n}</option>`).join("");
-    const opts2 = STATIONS.map((n,i) =>
-      `<option value="${i}"${i===to?" selected":""}>${n}</option>`).join("");
-
-    let html = `
-      <div class="route-box">
-        <div class="rlbl">ОБЕРІТЬ МАРШРУТ</div>
-        <div class="route-row">
-          <div class="sel-wrap">
-            <label>ВІД</label>
-            <select onchange="fr=+this.value;renderContent()">${opts1}</select>
-          </div>
-          <button id="btn-swap" onclick="let t=fr;fr=to;to=t;renderContent()">⇄</button>
-          <div class="sel-wrap">
-            <label>ДО</label>
-            <select onchange="to=+this.value;renderContent()">${opts2}</select>
-          </div>
-        </div>
-      </div>`;
-
-    if (fr === to) {
-      html += `<p class="nodata">Оберіть різні станції</p>`;
-    } else {
-      const going = fr < to;
-      const trains = going ? TM : TK;
-      const rd = trains
-        .filter(t => t.times[fr] != null && t.times[to] != null)
-        .map(t => ({...t, dep:t.times[fr], arr:t.times[to], dur:t.times[to]-t.times[fr]}))
-        .sort((a,b) => a.dep - b.dep);
-
-      html += `
-        <div style="margin-bottom:10px">
-          <span class="dir-badge ${going?"badge-m":"badge-k"}">
-            ${going?"→ МЕРЕФА":"→ ХАРКІВ"}
-          </span>
-          <span class="route-info">${STATIONS[fr]} → ${STATIONS[to]}</span>
-        </div>
-        <div class="tbl-wrap"><table>
-          <colgroup>
-            <col class="col-time"><col class="col-time">
-            <col class="col-num"><col class="col-note">
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Відпр.</th><th>Приб.</th>
-              <th>№ / ${going?"Кінцева":"Звідки"}</th><th>Прим.</th>
-            </tr>
-          </thead>
-          <tbody>`;
-
-      if (!rd.length) {
-        html += `<tr><td colspan="4" class="nodata">Немає рейсів</td></tr>`;
-      } else {
-        rd.forEach(t => {
-          const dk = isAnch(t.dir, fr, t);
-          const ak = isAnch(t.dir, to, t);
-          html += `
-            <tr${t.cancelled?' class="row-cancelled"':''}>
-              <td>
-                <span class="t-time${t.cancelled?" cancelled":""}">${dk?"★":"~"}${hhmm(t.dep)}</span>
-
-              </td>
-              <td>
-                <span class="t-time${t.cancelled?" cancelled":""}">${ak?"★":"~"}${hhmm(t.arr)}</span>
-
-              </td>
-              <td>
-                <span class="t-num">${t.num}</span><br>
-                <span class="${going?"t-sub-green":"t-sub-blue"}">${going?t.dest:t.orig}</span>
-              </td>
-              <td>${noteCell(t)}</td>
-            </tr>`;
-        });
-      }
-      html += `</tbody></table></div>`;
-    }
-    c.innerHTML = html;
+  if (scrollToNext) {
+    const el = c.querySelector("tr.next");
+    if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "center", inline: "nearest" });
+    scrollToNext = false;
   }
 }
 
 function setMode(m) {
   mode = m;
-  document.querySelectorAll(".tab").forEach((t,i) =>
-    t.classList.toggle("active", (m==="st"&&i===0)||(m==="rt"&&i===1)));
+  expanded = null;
+  scrollToNext = true;
+  ["st", "rt", "ch"].forEach(id => document.getElementById("tab-" + id).classList.toggle("active", id === m));
   buildSidebar();
-  renderContent();
+  renderAll();
 }
 
 // ── Старт ────────────────────────────────────────────────
-loadData();
+updateDateBox();
+loadAll();
 </script>
 </body>
 </html>
-
-
-
-
-
