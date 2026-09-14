@@ -81,6 +81,34 @@ def index():
     return cors(Response("OK", 200, content_type="text/plain; charset=utf-8"))
 
 
+@app.route("/whoami")
+def whoami():
+    """Діагностика: звідки сервіс виходить у мережу і чи бачить сайт УЗ.
+
+    Сайт відповідає лише європейським мережам, тому сервіс має стояти в регіоні Frankfurt.
+    """
+    info: dict = {"region_env": os.environ.get("RENDER_REGION", "невідомо")}
+    try:
+        r = requests.get("https://ipinfo.io/json", timeout=(10, 20))
+        data = r.json()
+        info["ip"] = data.get("ip")
+        info["country"] = data.get("country")
+        info["city"] = data.get("city")
+        info["org"] = data.get("org")
+    except Exception as e:  # noqa: BLE001
+        info["ip_error"] = str(e)[:160]
+    started = time.time()
+    try:
+        r = requests.get(uz.BASE_URL, params={"sid1": uz.KHARKIV_SID, "sid2": uz.MEREFA_SID, "dateR": 0},
+                         headers={"User-Agent": USER_AGENT}, timeout=(15, 40))
+        info["uz_status"] = r.status_code
+        info["uz_trains"] = len(uz.parse_pair_list(r.text))
+    except Exception as e:  # noqa: BLE001
+        info["uz_error"] = str(e)[:200]
+    info["uz_seconds"] = round(time.time() - started, 1)
+    return cors(jsonify(**info))
+
+
 @app.route("/fetch")
 def fetch():
     if GATEWAY_TOKEN and request.args.get("token") != GATEWAY_TOKEN:
