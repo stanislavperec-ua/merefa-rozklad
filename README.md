@@ -30,6 +30,7 @@ Telegram ─► webhook ─► Render (bot.py): кнопка Mini App, /next, /z
 | `bot.py` | Telegram-бот (Flask + pyTelegramBotAPI) |
 | `gateway.py` | збирач розкладу: маршрути /refresh, /status, /schedule.json, /whoami (Blueprint, підключений до бота) |
 | `worker.js` | Cloudflare Worker: єдиний шлях до сайту УЗ з хмар |
+| `update_schedule.cmd` | запасний шлях: зібрати розклад з ПК в Україні і запушити вручну |
 | `tests/` | 25 юніт-тестів: парсер, шлюзи, слоти оновлення |
 
 ## Важливо: сайт УЗ блокує великі хмари
