@@ -1,25 +1,27 @@
 name: Diag network
 # Ручна діагностика: якими шляхами раннер GitHub (США) може дістати сайт УЗ.
-# Сайт відповідає лише європейським мережам, тому потрібен шлюз у Європі.
 on:
   workflow_dispatch:
 jobs:
   diag:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
-      UZ_GATEWAY: ${{ secrets.UZ_GATEWAY }}
+      UZ_GATEWAYS: ${{ secrets.UZ_GATEWAYS }}
     steps:
       - name: Probe
         run: |
           UZ="https://swrailway.gov.ua/timetable/eltrain/?sid1=2528&sid2=2538&dateR=0"
           ENC="https%3A%2F%2Fswrailway.gov.ua%2Ftimetable%2Feltrain%2F%3Fsid1%3D2528%26sid2%3D2538%26dateR%3D0"
-          probe() { printf '%-34s ' "$1"; code=$(curl -s -o /tmp/b -m 45 -A "Mozilla/5.0" -w '%{http_code}' "$2" || echo "curl-err"); printf 'HTTP %-8s bytes %-7s trains %s\n' "$code" "$(stat -c%s /tmp/b 2>/dev/null)" "$(grep -c -E '6685|6687' /tmp/b 2>/dev/null)"; }
-          echo "runner ip: $(curl -s -m 10 https://api.ipify.org) ($(curl -s -m 10 https://ipinfo.io/country))"
-          probe "direct"            "$UZ"
-          probe "cors.lol"          "https://api.cors.lol/?url=$ENC"
-          probe "allorigins/raw"    "https://api.allorigins.win/raw?url=$ENC"
-          probe "codetabs"          "https://api.codetabs.com/v1/proxy?quest=$ENC"
-          probe "whateverorigin"    "https://www.whateverorigin.org/get?url=$ENC"
-          probe "corsproxy.io"      "https://corsproxy.io/?url=$ENC"
-          if [ -n "$UZ_GATEWAY" ]; then probe "own gateway" "${UZ_GATEWAY}${ENC}"; else echo "own gateway                         (secret UZ_GATEWAY not set)"; fi
+          probe() { printf '%-32s ' "$1"; u="$2"; shift 2; code=$(curl -s -o /tmp/b -m 60 -A "Mozilla/5.0" "$@" -w '%{http_code}' "$u" || echo "err"); printf 'HTTP %-6s bytes %-8s trains %s\n' "$code" "$(stat -c%s /tmp/b 2>/dev/null)" "$(grep -c -E '6685|6687' /tmp/b 2>/dev/null)"; }
+          echo "runner: $(curl -s -m 10 https://api.ipify.org) ($(curl -s -m 10 https://ipinfo.io/country))"
+          probe "cors.lol"            "https://api.cors.lol/?url=$ENC"
+          probe "jina direct"         "https://r.jina.ai/$UZ" -H "x-engine: direct" -H "x-respond-with: html"
+          probe "jina timeout40"      "https://r.jina.ai/$UZ" -H "x-timeout: 40"
+          probe "microlink"           "https://api.microlink.io/?url=$ENC&meta=false&insights=false&palette=false&iframe=false&prerender=false"
+          probe "sirjosh worker"      "https://cors-get-proxy.sirjosh.workers.dev/?url=$ENC"
+          probe "garmeeh worker"      "https://corsproxy.garmeeh.workers.dev/?url=$ENC"
+          probe "cors.eu.org"         "https://cors.eu.org/$UZ"
+          probe "proxy.cors.sh"       "https://proxy.cors.sh/$UZ" -H "x-cors-api-key: temp_$(date +%s)"
+          probe "whateverorigin"      "https://www.whateverorigin.org/get?url=$ENC"
+          if [ -n "$UZ_GATEWAYS" ]; then probe "own gateway" "$(echo "$UZ_GATEWAYS" | cut -d, -f1 | sed "s|{url}|$ENC|")"; fi
