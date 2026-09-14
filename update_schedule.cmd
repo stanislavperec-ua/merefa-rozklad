@@ -1,24 +1,26 @@
 @echo off
-rem Оновлення офіційного розкладу УЗ з цього ПК і публікація в GitHub.
-rem Потрібно, бо swrailway.gov.ua не відповідає з хмарних мереж (GitHub Actions, Render).
-rem Запуск: подвійний клік або "update_schedule.cmd" у консолі. Потрібні Python 3.11+ і git.
+rem Update the official UZ timetable from this PC and publish it to GitHub.
+rem Needed because swrailway.gov.ua does not answer cloud networks (GitHub Actions, Render).
+rem Run: double-click, or "update_schedule.cmd" in a console. Requires Python 3.11+ and git.
+rem (ASCII only: cmd reads batch files in the OEM code page, Cyrillic here breaks the parser.)
 chcp 65001 >nul
 cd /d "%~dp0"
 
-echo === Розклад УЗ ===
+echo === UZ timetable (swrailway.gov.ua) ===
 python build_schedule.py --force --horizon 14
 if errorlevel 1 (
   echo.
-  echo Сайт УЗ недоступний або помилка збірки. schedule.json не змінено.
+  echo FAILED: UZ site unavailable or build error. schedule.json left unchanged.
   pause
   exit /b 1
 )
 
 echo.
-echo === Публікація ===
+echo === Publish ===
 git add schedule.json trains_cache.json
-git diff --staged --quiet && (
-  echo Розклад не змінився, публікувати нічого.
+git diff --staged --quiet
+if not errorlevel 1 (
+  echo Timetable unchanged, nothing to publish.
   pause
   exit /b 0
 )
@@ -26,9 +28,9 @@ git -c user.name=stanislavperec-ua -c user.email=265459095+stanislavperec-ua@use
 git pull --rebase -q origin main
 git push -q origin main
 if errorlevel 1 (
-  echo Не вдалося відправити в GitHub. Перевірте з'єднання і запустіть ще раз.
+  echo FAILED: could not push to GitHub. Check the connection and run again.
   pause
   exit /b 1
 )
-echo Готово: schedule.json опубліковано, застосунок оновиться за 1-2 хвилини.
+echo DONE: schedule.json published, the app picks it up in 1-2 minutes.
 pause
