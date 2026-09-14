@@ -177,6 +177,14 @@ def default_gateways() -> list[str]:
     return list(GATEWAYS)
 
 
+def direct_allowed() -> bool:
+    """У хмарі прямий маршрут завжди впирається в таймаут, тож його можна вимкнути.
+
+    UZ_DIRECT=0 прибирає прямі спроби і економить 15 секунд на першому запиті.
+    """
+    return os.environ.get("UZ_DIRECT", "1").strip() not in ("0", "false", "no")
+
+
 class Client:
     """Завантажує сторінки УЗ напряму або через європейський шлюз.
 
@@ -186,11 +194,13 @@ class Client:
     """
 
     def __init__(self, session: requests.Session | None = None, pause: float = REQUEST_PAUSE,
-                 gateways: list[str] | None = None, direct: bool = True):
+                 gateways: list[str] | None = None, direct: bool | None = None):
         self.session = session or requests.Session()
         self.session.headers["User-Agent"] = USER_AGENT
         self.pause = pause
         self.requests_made = 0
+        if direct is None:
+            direct = direct_allowed()
         self.routes: list[str | None] = ([None] if direct else []) + list(
             gateways if gateways is not None else default_gateways())
         if not self.routes:

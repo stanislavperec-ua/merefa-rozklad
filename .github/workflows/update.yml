@@ -4,12 +4,12 @@ name: Update schedule data
 #   * build_live.py : канал УЗ (затримки, скасування) щопівгодини, доступний звідусіль;
 #   * розклад swrailway.gov.ua : тричі на добу, о 06:00, 10:00 і 13:00 за Києвом.
 #
-# Сайт УЗ приймає з'єднання лише з європейських мереж, а раннер GitHub працює у США.
-# Тому розклад збирає сервіс gateway.py на Render (регіон Frankfurt):
-#   * якщо заданий секрет GATEWAY_URL, workflow просто просить сервіс оновитись,
-#     і сервіс сам комітить schedule.json через GitHub API;
-#   * якщо секрету немає, workflow пробує зібрати сам через публічні шлюзи (uz.GATEWAYS),
-#     що менш надійно: у них є ліміти запитів.
+# Сайт УЗ відкидає з'єднання з великих хмар (Amazon, Microsoft, Google), тому ні раннер
+# GitHub, ні Render до нього не дістають напряму. Запити йдуть через Cloudflare Worker
+# (worker.js), який не заблокований.
+#   * якщо заданий секрет GATEWAY_URL (адреса бота на Render), workflow просить бота
+#     оновити розклад: той збирає через Worker і комітить schedule.json сам;
+#   * якщо секрету немає, workflow збирає власними силами через шлюзи з секрету UZ_GATEWAYS.
 
 on:
   schedule:
@@ -53,7 +53,7 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests
 
-      - name: Timetable via gateway (Frankfurt)
+      - name: Timetable via collector service
         id: gateway
         if: env.GATEWAY_URL != ''
         continue-on-error: true
@@ -78,7 +78,7 @@ jobs:
           done
           echo "Сервіс не відповів вчасно"; exit 1
 
-      - name: Timetable fallback (public gateways)
+      - name: Timetable fallback (direct build via gateways)
         if: env.GATEWAY_URL == ''
         continue-on-error: true
         env:

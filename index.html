@@ -508,9 +508,9 @@ const CHANNEL_URL  = "https://t.me/UZprymisky";
 const KHARKIV_SID = 2528, MEREFA_SID = 2538;
 const REFRESH_MS = 10 * 60 * 1000;   // автооновлення даних у відкритому застосунку
 const LIVE_FRESH_H = 3;              // затримка вважається актуальною для банера стільки годин
-// Сервіс-збирач у Європі (gateway.py на Render, регіон Frankfurt). Якщо порожньо, кнопка
-// примусового оновлення не показується і застосунок працює лише на даних з GitHub Pages.
-const GATEWAY_URL = "";
+// Сервіс-збирач: це той самий бот на Render (маршрути /refresh, /status, /schedule.json
+// підключені з gateway.py). Якщо порожньо, кнопка примусового оновлення не показується.
+const GATEWAY_URL = "https://merefa-rozklad.onrender.com";
 // ════════════════════════════════════════════════════════
 
 // Запасний перелік станцій, якщо schedule.json ще не завантажено

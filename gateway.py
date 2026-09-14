@@ -1,24 +1,22 @@
 # -*- coding: utf-8 -*-
-"""Європейський шлюз і збирач розкладу (Render, регіон Frankfurt).
+"""Збирач розкладу: маршрути, які підключаються до бота (bot.py) або працюють окремо.
 
-Навіщо: swrailway.gov.ua приймає з'єднання лише з європейських мереж, а GitHub Actions
-і основний бот працюють у США. Цей сервіс стоїть у Франкфурті, тому сайт УЗ для нього
-доступний напряму.
+Сайт swrailway.gov.ua відкидає з'єднання з великих хмар (Amazon, Microsoft, Google),
+тому Render і GitHub Actions до нього не дістають навіть із Франкфурта. Запити йдуть
+через Cloudflare Worker (worker.js), адреса якого задається змінною UZ_GATEWAYS.
 
-Що вміє:
-    GET  /                 health-check (Render, UptimeRobot)
-    GET  /fetch?url=...    проксі однієї сторінки УЗ (використовує GitHub Actions)
+Маршрути:
+    GET  /whoami           діагностика: мережа сервісу і чи бачить він сайт УЗ
+    GET  /fetch?url=...    проксі однієї сторінки УЗ (запасний шлях для GitHub Actions)
     POST /refresh          зібрати розклад і закомітити в GitHub (кнопка в Mini App)
     GET  /status           стан останньої збірки
-    GET  /schedule.json    свіжозібраний розклад просто з пам'яті, без очікування Pages
+    GET  /schedule.json    свіжозібраний розклад з пам'яті, без очікування GitHub Pages
 
-Розгортання (Render → New → Web Service, репозиторій merefa-rozklad, регіон Frankfurt, Free):
-    Build Command:  pip install -r requirements.txt
-    Start Command:  gunicorn gateway:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1
-    Environment:
-        GH_TOKEN      = fine-grained token з правом Contents: Read and write на репозиторій
-        GH_REPO       = stanislavperec-ua/merefa-rozklad   (необов'язково, це значення за умовчанням)
-        GATEWAY_TOKEN = довільний рядок (необов'язково; захищає /fetch)
+Змінні оточення:
+    GH_TOKEN      токен GitHub з правом Contents: Read and write (інакше збірка не комітиться)
+    GH_REPO       stanislavperec-ua/merefa-rozklad (значення за умовчанням)
+    UZ_GATEWAYS   https://<worker>.workers.dev/fetch?url={url}
+    GATEWAY_TOKEN довільний рядок, захищає /fetch (необов'язково)
 """
 from __future__ import annotations
 
@@ -31,7 +29,7 @@ import time
 from datetime import datetime, timedelta
 
 import requests
-from flask import Flask, Response, abort, jsonify, request
+from flask import Blueprint, Flask, Response, abort, jsonify, request
 
 import build_schedule
 import uz
@@ -39,7 +37,8 @@ import uz
 log = logging.getLogger("gateway")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-app = Flask(__name__)
+# Маршрути оформлені як Blueprint, щоб їх міг підключити і бот (bot.py), і окремий сервіс
+gateway_bp = Blueprint("gateway", __name__)
 
 ALLOWED_HOSTS = {"swrailway.gov.ua", "www.swrailway.gov.ua"}
 GATEWAY_TOKEN = os.environ.get("GATEWAY_TOKEN", "")
@@ -76,12 +75,7 @@ def cors(resp: Response) -> Response:
     return resp
 
 
-@app.route("/")
-def index():
-    return cors(Response("OK", 200, content_type="text/plain; charset=utf-8"))
-
-
-@app.route("/whoami")
+@gateway_bp.route("/whoami")
 def whoami():
     """Діагностика: звідки сервіс виходить у мережу і чи бачить сайт УЗ.
 
@@ -109,7 +103,7 @@ def whoami():
     return cors(jsonify(**info))
 
 
-@app.route("/fetch")
+@gateway_bp.route("/fetch")
 def fetch():
     if GATEWAY_TOKEN and request.args.get("token") != GATEWAY_TOKEN:
         abort(403)
@@ -177,7 +171,7 @@ def do_refresh() -> None:
         except Exception as e:  # noqa: BLE001
             log.warning("Кеш поїздів недоступний, збираю без нього: %s", e)
 
-        client = uz.Client()          # сервіс у Європі: працює прямий маршрут
+        client = uz.Client()          # маршрути: прямий (у хмарі не працює) і Cloudflare Worker
         schedule = build_schedule.build(client, datetime.now(KYIV).date(), HORIZON, cache, False)
         latest_schedule = schedule
 
@@ -213,7 +207,7 @@ def do_refresh() -> None:
                          ok=False, message=f"помилка: {str(e)[:200]}")
 
 
-@app.route("/refresh", methods=["POST", "GET", "OPTIONS"])
+@gateway_bp.route("/refresh", methods=["POST", "GET", "OPTIONS"])
 def refresh():
     if request.method == "OPTIONS":
         return cors(Response("", 204))
@@ -242,12 +236,12 @@ def public_state() -> dict:
                                       "generated", "committed", "requests")}
 
 
-@app.route("/status")
+@gateway_bp.route("/status")
 def status():
     return cors(jsonify(**public_state()))
 
 
-@app.route("/schedule.json")
+@gateway_bp.route("/schedule.json")
 def schedule_json():
     if latest_schedule is None:
         return cors(jsonify(error="ще не зібрано"), )
@@ -255,5 +249,11 @@ def schedule_json():
                          content_type="application/json; charset=utf-8"))
 
 
+def create_app() -> Flask:
+    app = Flask(__name__)
+    app.register_blueprint(gateway_bp)
+    return app
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    create_app().run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

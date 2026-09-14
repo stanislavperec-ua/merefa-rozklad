@@ -28,44 +28,56 @@ Telegram ─► webhook ─► Render (bot.py): кнопка Mini App, /next, /z
 | `trains_cache.json` | кеш сторінок поїздів (маршрут по зупинках), оновлюється раз на 7 днів |
 | `index.html` | Mini App (весь UI в одному файлі) |
 | `bot.py` | Telegram-бот (Flask + pyTelegramBotAPI) |
-| `gateway.py` | резервний шлюз до сайту УЗ (розгортається на Render у регіоні Frankfurt) |
+| `gateway.py` | збирач розкладу: маршрути /refresh, /status, /schedule.json, /whoami (Blueprint, підключений до бота) |
+| `worker.js` | Cloudflare Worker: єдиний шлях до сайту УЗ з хмар |
 | `tests/` | 25 юніт-тестів: парсер, шлюзи, слоти оновлення |
 
-## Важливо: сайт УЗ відповідає лише європейським мережам
+## Важливо: сайт УЗ блокує великі хмари
 
-Перевірка з 25 вузлів світу (check-host.net) показала: swrailway.gov.ua приймає з'єднання
-з Європи (Нідерланди, Фінляндія, Австрія, Британія, Молдова, Україна), але мовчить для США,
-Канади, Азії та РФ. GitHub Actions і Render у США отримують TCP timeout. Публічні CORS-шлюзи
-теж не рятують: єдиний робочий (api.cors.lol) блокує вже після десятка запитів.
+Перевірено дослідним шляхом:
 
-Тому розклад збирає **gateway.py на Render у регіоні Frankfurt**: для нього сайт УЗ доступний
-напряму. Сервіс уміє:
+| Звідки | Мережа | Результат |
+|---|---|---|
+| ПК в Україні | Disavi Line | працює |
+| GitHub Actions | Microsoft Azure (США) | timeout |
+| Render, регіон Frankfurt | Amazon AWS (Німеччина) | timeout |
+| api.cors.lol | Hetzner (Німеччина) | працює |
+| Cloudflare Worker | Cloudflare | працює |
 
-| Маршрут | Призначення |
-|---|---|
-| `GET /` | health-check (Render, UptimeRobot) |
-| `GET /fetch?url=...` | проксі однієї сторінки УЗ (запасний режим для Actions) |
-| `POST /refresh` | зібрати розклад і закомітити `schedule.json` через GitHub API |
-| `GET /status` | стан останньої збірки |
-| `GET /schedule.json` | свіжозібраний розклад просто з пам'яті, без очікування GitHub Pages |
+Тобто справа не в географії, а в тому, що swrailway.gov.ua відкидає діапазони Amazon,
+Microsoft і Google. Тому запити йдуть через **Cloudflare Worker** (`worker.js`):
+безкоштовно назавжди, 100 000 запитів на добу, розгортається за три хвилини.
 
-### Налаштування сервісу (одноразово, безкоштовно)
+### Схема
 
-1. **Токен GitHub:** https://github.com/settings/personal-access-tokens/new → Repository access:
-   `merefa-rozklad` → Permissions → Repository permissions → **Contents: Read and write** → Generate.
-2. **Сервіс:** https://dashboard.render.com → New → Web Service → репозиторій `merefa-rozklad` →
-   **Region: Frankfurt (EU Central)**, Instance Type: **Free**,
-   Build Command `pip install -r requirements.txt`,
-   Start Command `gunicorn gateway:app --bind 0.0.0.0:$PORT --timeout 300 --workers 1`,
-   Environment: `GH_TOKEN` = токен з кроку 1.
-3. **Секрет репозиторію:** Settings → Secrets and variables → Actions → New repository secret:
-   ім'я `GATEWAY_URL`, значення `https://<ім'я-сервісу>.onrender.com`.
-4. **Кнопка в Mini App:** у `index.html` вписати ту саму адресу в константу `GATEWAY_URL`.
+```
+Cloudflare Worker (/fetch)  ←── єдиний шлях до swrailway.gov.ua
+        ▲                    ▲
+        │                    │
+   бот на Render        GitHub Actions
+   (збирає розклад,     (щопівгодини перевіряє слот 06:00/10:00/13:00
+    комітить у GitHub)   і просить бота оновитись)
+        ▲
+        │ кнопка ↻
+   Mini App
+```
 
-Після цього оновлення повністю автономне: GitHub Actions щопівгодини перевіряє, чи настав слот
-(06:00, 10:00, 13:00 за Києвом), і якщо так, просить сервіс зібрати розклад. Кнопка ↻ у Mini App
-запускає збірку вручну і одразу показує свіжі дані, не чекаючи деплою GitHub Pages.
-Безкоштовний Render засинає без трафіку, тому перший запит прокидає сервіс до хвилини.
+Збирач (`gateway.py`) підключений до бота як Blueprint, тому окремий сервіс на Render
+не потрібен і безкоштовні 750 годин на місяць не витрачаються двічі.
+
+### Налаштування (одноразово, безкоштовно)
+
+1. **Cloudflare Worker.** https://dash.cloudflare.com → Compute (Workers) → Create →
+   Start with Hello World → Deploy → Edit code → вставити вміст `worker.js` → Deploy.
+   Отримана адреса виду `https://<назва>.<акаунт>.workers.dev`.
+2. **Змінні бота.** https://dashboard.render.com → сервіс `merefa-rozklad` → Environment:
+   * `GH_TOKEN` = fine-grained token GitHub з правом Contents: Read and write;
+   * `UZ_GATEWAYS` = `https://<адреса-воркера>/fetch?url={url}` (дужки `{url}` залишити як є);
+   * `UZ_DIRECT` = `0`.
+3. **Секрет репозиторію.** Settings → Secrets and variables → Actions → New repository secret:
+   `GATEWAY_URL` = `https://merefa-rozklad.onrender.com`.
+
+Після цього оновлення автономне: тричі на добу і кнопкою ↻ з Mini App.
 
 ## Локальний запуск
 
