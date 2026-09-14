@@ -1,10 +1,14 @@
 name: Update schedule data
 
-# Один workflow на обидва джерела, щоб не було гонок при push:
-#   * build_live.py     : щопівгодини (канал УЗ: затримки, скасування);
-#   * build_schedule.py : не частіше ніж раз на 4 години (офіційний розклад swrailway.gov.ua),
-#                         або примусово через workflow_dispatch з force=true.
-# Cron у UTC: 02:00-20:30 UTC = 05:00-23:30 Київ влітку, 04:00-22:30 взимку.
+# Один workflow на обидва джерела:
+#   * build_live.py     : канал УЗ (затримки, скасування) щопівгодини;
+#   * build_schedule.py : офіційний розклад swrailway.gov.ua двічі на добу,
+#                         о 06:00 і 12:00 за Києвом (скрипт сам вирішує за слотами,
+#                         тому перехід на літній час і пропуски cron не шкодять).
+#
+# Сайт УЗ приймає з'єднання лише з європейських мереж, а раннер GitHub працює у США,
+# тому запити йдуть через шлюз у Європі (перелік у uz.GATEWAYS). Власний шлюз
+# (gateway.py на Render, регіон Frankfurt) задається секретом UZ_GATEWAYS і має пріоритет.
 
 on:
   schedule:
@@ -12,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Примусово оновити розклад УЗ (ігнорувати вік schedule.json)"
+        description: "Оновити розклад негайно, не чекаючи слоту 06:00/12:00"
         type: boolean
         default: false
       refresh_cache:
@@ -30,9 +34,9 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
-      UZ_PROXY: ${{ secrets.UZ_PROXY }}
+      UZ_GATEWAYS: ${{ secrets.UZ_GATEWAYS }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,20 +50,14 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests
 
-      # swrailway.gov.ua не відповідає з хмарних мереж (GitHub Actions, Render), тому цей крок
-      # виконується лише якщо задано секрет UZ_PROXY (HTTPS-проксі з українським/незаблокованим IP,
-      # наприклад Apify Proxy: http://groups-RESIDENTIAL,country-UA:<token>@proxy.apify.com:8000)
-      # або при ручному запуску з force. Без проксі розклад оновлюється з ПК: update_schedule.cmd.
       - name: Official timetable (swrailway.gov.ua)
         id: timetable
-        if: ${{ inputs.force || env.UZ_PROXY != '' }}
         continue-on-error: true
         env:
           FORCE: ${{ inputs.force }}
           REFRESH: ${{ inputs.refresh_cache }}
-          HTTPS_PROXY: ${{ env.UZ_PROXY }}
         run: |
-          ARGS="--max-age-hours 6"
+          ARGS="--slots 6,12"
           [ "$FORCE" = "true" ] && ARGS="$ARGS --force"
           [ "$REFRESH" = "true" ] && ARGS="$ARGS --refresh-cache"
           python build_schedule.py $ARGS
@@ -69,7 +67,7 @@ jobs:
 
       - name: Report timetable failure
         if: steps.timetable.outcome == 'failure'
-        run: echo "::warning::Розклад УЗ не оновлено (сайт недоступний з раннера), live.json оновлено"
+        run: echo "::warning::Розклад УЗ не оновлено (сайт або шлюзи недоступні); live.json оновлено"
 
       - name: Commit and push
         run: |

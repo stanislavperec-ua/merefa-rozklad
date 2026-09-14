@@ -10,10 +10,12 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone, tzinfo
+from urllib.parse import quote, urlencode
 
 import requests
 from bs4 import BeautifulSoup
@@ -77,9 +79,22 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36 merefa-rozklad/2.0"
 )
-REQUEST_PAUSE = 0.4      # пауза між запитами, щоб не навантажувати сайт
+REQUEST_PAUSE = 0.4          # пауза між запитами, щоб не навантажувати сайт
+GATEWAY_PAUSE = 1.5          # через шлюз повільніше: у публічних сервісів є ліміт запитів
 REQUEST_TIMEOUT = 60
+CONNECT_TIMEOUT = 15
 RETRIES = 3
+
+# Сайт УЗ приймає з'єднання лише з європейських мереж: перевірено з 25 вузлів світу
+# (Нідерланди, Фінляндія, Австрія, Британія, Молдова, Україна відповідають; США, Канада,
+# Азія, РФ отримують TCP timeout). GitHub Actions і Render працюють у США, тому запити
+# йдуть через відкриті шлюзи, розміщені в Європі. {url} підставляється URL-encoded.
+GATEWAYS = [
+    "https://api.cors.lol/?url={url}",
+    "https://api.codetabs.com/v1/proxy?quest={url}",
+    "https://api.allorigins.win/raw?url={url}",
+]
+GATEWAY_MARKER = "ElTrain"   # ознака справжньої сторінки: шлюз міг повернути свою помилку
 
 # Станції в порядку від Харкова. sid: код станції на swrailway.gov.ua.
 STATIONS = [
@@ -154,33 +169,78 @@ class TrainPage:
 # ──────────────────────────────────────────────────────────────────────
 # HTTP
 # ──────────────────────────────────────────────────────────────────────
+def default_gateways() -> list[str]:
+    """Шлюзи зі змінної оточення UZ_GATEWAYS (через кому) або вбудований перелік."""
+    env = os.environ.get("UZ_GATEWAYS", "").strip()
+    if env:
+        return [g.strip() for g in env.split(",") if g.strip()]
+    return list(GATEWAYS)
+
+
 class Client:
-    def __init__(self, session: requests.Session | None = None, pause: float = REQUEST_PAUSE):
+    """Завантажує сторінки УЗ напряму або через європейський шлюз.
+
+    Маршрути пробуються по черзі: прямий, потім кожен шлюз. Перший, що віддав справжню
+    сторінку, запам'ятовується і далі використовується першим, щоб не витрачати час на
+    свідомо недоступні шляхи.
+    """
+
+    def __init__(self, session: requests.Session | None = None, pause: float = REQUEST_PAUSE,
+                 gateways: list[str] | None = None, direct: bool = True):
         self.session = session or requests.Session()
         self.session.headers["User-Agent"] = USER_AGENT
         self.pause = pause
         self.requests_made = 0
+        self.routes: list[str | None] = ([None] if direct else []) + list(
+            gateways if gateways is not None else default_gateways())
+        if not self.routes:
+            raise UZError("не задано жодного маршруту до сайту УЗ")
+        self.route: str | None = self.routes[0]
+        self.route_log: list[str] = []
+
+    @staticmethod
+    def _url(route: str | None, params: dict) -> str:
+        target = BASE_URL + "?" + urlencode(params)
+        if route is None:
+            return target
+        return route.replace("{url}", quote(target, safe=""))
+
+    def _pause_for(self, route: str | None) -> float:
+        return self.pause if route is None else max(self.pause, GATEWAY_PAUSE)
+
+    def _fetch(self, route: str | None, params: dict) -> str:
+        r = self.session.get(self._url(route, params), timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT))
+        self.requests_made += 1
+        r.raise_for_status()
+        r.encoding = "utf-8"
+        text = r.text
+        if GATEWAY_MARKER not in text:
+            raise UZError(f"відповідь не схожа на сторінку ElTrain ({len(text)} символів)")
+        return text
 
     def get(self, **params) -> str:
         last_err: Exception | None = None
+        # спочатку маршрут, який уже спрацював, потім решта
+        order = [self.route] + [r for r in self.routes if r != self.route]
         for attempt in range(1, RETRIES + 1):
-            try:
-                if self.requests_made:
-                    time.sleep(self.pause)
-                # (connect, read): сайт УЗ не відповідає з хмарних мереж (AWS, Azure), тож з'єднання чекаємо недовго
-                r = self.session.get(BASE_URL, params=params, timeout=(20, REQUEST_TIMEOUT))
-                self.requests_made += 1
-                r.raise_for_status()
-                r.encoding = "utf-8"
-                text = r.text
-                if "ElTrain" not in text:
-                    raise UZError("відповідь не схожа на сторінку ElTrain")
-                return text
-            except Exception as e:  # noqa: BLE001
-                last_err = e
-                log.warning("UZ запит %s: спроба %d/%d невдала: %s", params, attempt, RETRIES, e)
-                time.sleep(2 * attempt)
+            for route in order:
+                try:
+                    if self.requests_made:
+                        time.sleep(self._pause_for(route))
+                    text = self._fetch(route, params)
+                    if route != self.route:
+                        name = route or "напряму"
+                        log.info("UZ: перемикаюсь на маршрут %s", name)
+                        self.route_log.append(name)
+                        self.route = route
+                    return text
+                except Exception as e:  # noqa: BLE001
+                    last_err = e
+                    log.warning("UZ %s через %s: спроба %d/%d невдала: %s",
+                                params, route or "напряму", attempt, RETRIES, str(e)[:160])
+            time.sleep(2 * attempt)
         raise UZError(f"не вдалося завантажити {params}: {last_err}")
+
 
     def pair_list(self, sid1: int, sid2: int, date: str | None = None) -> list[TrainRow]:
         if date:

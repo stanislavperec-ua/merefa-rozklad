@@ -216,12 +216,13 @@ def build(client: uz.Client, today: date, horizon: int, cache: dict, refresh_cac
         "stats": {
             "requests": client.requests_made,
             "trains": len(public_trains),
+            "route": getattr(client, "route", None) or "напряму",
             "errors": errors,
         },
     }
 
 
-def schedule_age_hours(path: str) -> float | None:
+def schedule_generated(path: str) -> datetime | None:
     data = load_json(path, None)
     if not data or not data.get("generated"):
         return None
@@ -229,9 +230,34 @@ def schedule_age_hours(path: str) -> float | None:
         gen = datetime.fromisoformat(data["generated"])
     except ValueError:
         return None
-    if gen.tzinfo is None:
-        gen = gen.replace(tzinfo=KYIV)
-    return (now_kyiv() - gen).total_seconds() / 3600
+    return gen.replace(tzinfo=KYIV) if gen.tzinfo is None else gen
+
+
+def schedule_age_hours(path: str) -> float | None:
+    gen = schedule_generated(path)
+    return None if gen is None else (now_kyiv() - gen).total_seconds() / 3600
+
+
+def last_slot(now: datetime, hours: list[int]) -> datetime:
+    """Останній слот оновлення, що вже настав (наприклад 06:00 або 12:00 за Києвом)."""
+    today_slots = sorted(now.replace(hour=h, minute=0, second=0, microsecond=0) for h in hours)
+    passed = [s for s in today_slots if s <= now]
+    return passed[-1] if passed else today_slots[-1] - timedelta(days=1)
+
+
+def due_by_slots(path: str, now: datetime, hours: list[int]) -> tuple[bool, str]:
+    """Чи час оновлювати розклад: так, якщо файл старіший за останній слот.
+
+    Стійке і до пропущених запусків cron (наздожене наступного разу), і до переходу
+    на літній час, бо слоти рахуються у київському часі.
+    """
+    slot = last_slot(now, hours)
+    gen = schedule_generated(path)
+    if gen is None:
+        return True, "schedule.json відсутній"
+    if gen < slot:
+        return True, f"останнє оновлення {gen:%d.%m %H:%M} < слот {slot:%d.%m %H:%M}"
+    return False, f"слот {slot:%d.%m %H:%M} вже відпрацьовано ({gen:%d.%m %H:%M})"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -239,7 +265,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--horizon", type=int, default=HORIZON_DAYS, help="скільки днів уперед (типово %(default)s)")
     ap.add_argument("--max-age-hours", type=float, default=None,
                     help="пропустити запуск, якщо schedule.json молодший за N годин")
-    ap.add_argument("--force", action="store_true", help="ігнорувати --max-age-hours")
+    ap.add_argument("--slots", default=None,
+                    help="години оновлення за київським часом через кому, напр. 6,12: "
+                         "запуск лише якщо schedule.json старіший за останній слот")
+    ap.add_argument("--force", action="store_true", help="ігнорувати --slots і --max-age-hours")
     ap.add_argument("--refresh-cache", action="store_true", help="перезавантажити сторінки всіх поїздів")
     ap.add_argument("--today", help="дата «сьогодні» у форматі YYYY-MM-DD (для тестів)")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -250,15 +279,25 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    if args.max_age_hours is not None and not args.force:
-        age = schedule_age_hours(SCHEDULE_FILE)
-        if age is not None and age < args.max_age_hours:
-            log.info("schedule.json оновлено %.1f год тому (< %.1f): пропускаю", age, args.max_age_hours)
-            return 0
+    if not args.force:
+        if args.slots:
+            hours = [int(h) for h in args.slots.split(",") if h.strip()]
+            due, why = due_by_slots(SCHEDULE_FILE, now_kyiv(), hours)
+            if not due:
+                log.info("Пропускаю: %s", why)
+                return 0
+            log.info("Оновлюю: %s", why)
+        elif args.max_age_hours is not None:
+            age = schedule_age_hours(SCHEDULE_FILE)
+            if age is not None and age < args.max_age_hours:
+                log.info("schedule.json оновлено %.1f год тому (< %.1f): пропускаю", age, args.max_age_hours)
+                return 0
 
     today = date.fromisoformat(args.today) if args.today else now_kyiv().date()
     cache = load_json(CACHE_FILE, {})
     client = uz.Client()
+    log.info("Маршрути до сайту УЗ: %s", ", ".join(r or "напряму" for r in client.routes))
+    log.info("Горизонт: %d днів", args.horizon)
     try:
         schedule = build(client, today, args.horizon, cache, args.refresh_cache)
     except uz.UZError as e:

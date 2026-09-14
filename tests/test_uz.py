@@ -8,6 +8,8 @@ import sys
 import unittest
 from datetime import date, datetime, timezone
 
+import requests
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
@@ -164,6 +166,109 @@ class LiveClassifyTests(unittest.TestCase):
         nums = {"6685", "6686", "6335"}
         self.assertEqual(build_live.find_our_trains("Поїзд №6335/6336 Здолбунів", nums), ["6335"])
         self.assertEqual(build_live.find_our_trains("Поїзд №66850", nums), [])
+
+
+class GatewayTests(unittest.TestCase):
+    """Маршрутизація через європейські шлюзи (сайт УЗ не відповідає раннеру в США)."""
+
+    def test_url_building(self):
+        c = uz.Client(gateways=["https://gw.example/?url={url}"])
+        direct = c._url(None, {"sid1": 2528, "sid2": 2538})
+        self.assertEqual(direct, uz.BASE_URL + "?sid1=2528&sid2=2538")
+        viagw = c._url("https://gw.example/?url={url}", {"sid1": 2528})
+        self.assertEqual(viagw, "https://gw.example/?url=https%3A%2F%2Fswrailway.gov.ua%2Ftimetable%2Feltrain%2F%3Fsid1%3D2528")
+
+    def test_routes_order_and_direct_flag(self):
+        self.assertEqual(uz.Client(gateways=["g1", "g2"]).routes, [None, "g1", "g2"])
+        self.assertEqual(uz.Client(gateways=["g1"], direct=False).routes, ["g1"])
+        with self.assertRaises(uz.UZError):
+            uz.Client(gateways=[], direct=False)
+
+    def test_default_gateways_from_env(self):
+        old = os.environ.get("UZ_GATEWAYS")
+        try:
+            os.environ["UZ_GATEWAYS"] = " https://mine/?u={url} , https://other/{url} "
+            self.assertEqual(uz.default_gateways(), ["https://mine/?u={url}", "https://other/{url}"])
+            os.environ.pop("UZ_GATEWAYS")
+            self.assertEqual(uz.default_gateways(), uz.GATEWAYS)
+        finally:
+            os.environ.pop("UZ_GATEWAYS", None)
+            if old is not None:
+                os.environ["UZ_GATEWAYS"] = old
+
+    def test_failover_to_gateway_and_sticky_route(self):
+        """Прямий маршрут падає, перший шлюз віддає сторінку, далі він використовується першим."""
+        page = read("pair_kh_mer_all.html")
+        calls = []
+
+        class FakeResp:
+            def __init__(self, text): self.text, self.encoding = text, "utf-8"
+            def raise_for_status(self): pass
+
+        class FakeSession:
+            headers: dict = {}
+
+            def get(self, url, timeout=None):
+                calls.append(url)
+                if url.startswith(uz.BASE_URL):
+                    raise requests.ConnectionError("timed out")
+                return FakeResp(page)
+
+        c = uz.Client(session=FakeSession(), pause=0, gateways=["https://gw/?url={url}"])
+        self.assertEqual(len(uz.parse_pair_list(c.get(sid1=2528, sid2=2538, dateR=0))), 14)
+        self.assertEqual(c.route, "https://gw/?url={url}")
+        calls.clear()
+        c.get(sid1=2538, sid2=2528, dateR=0)
+        self.assertTrue(calls[0].startswith("https://gw/?url="), calls)
+
+    def test_gateway_error_page_is_rejected(self):
+        class FakeResp:
+            def __init__(self, text): self.text, self.encoding = text, "utf-8"
+            def raise_for_status(self): pass
+
+        class FakeSession:
+            headers: dict = {}
+
+            def get(self, url, timeout=None):
+                return FakeResp("<html>Too Many Requests</html>")
+
+        c = uz.Client(session=FakeSession(), pause=0, gateways=["https://gw/?url={url}"], direct=False)
+        with self.assertRaises(uz.UZError):
+            c.get(sid1=2528, sid2=2538, dateR=0)
+
+
+class SlotsTests(unittest.TestCase):
+    """Розклад оновлюється двічі на добу: 06:00 і 12:00 за Києвом."""
+
+    KYIV = uz.kyiv_tz()
+
+    def _due(self, now: datetime, generated: str | None):
+        import json
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "schedule.json")
+        if generated is not None:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"generated": generated}, f)
+        return build_schedule.due_by_slots(path, now, [6, 12])[0]
+
+    def test_slot_boundaries(self):
+        d = lambda h, m: datetime(2026, 9, 15, h, m, tzinfo=self.KYIV)  # noqa: E731
+        self.assertFalse(self._due(d(5, 59), "2026-09-14T12:05:00+03:00"))
+        self.assertTrue(self._due(d(6, 2), "2026-09-14T12:05:00+03:00"))
+        self.assertFalse(self._due(d(6, 35), "2026-09-15T06:03:00+03:00"))
+        self.assertFalse(self._due(d(11, 59), "2026-09-15T06:03:00+03:00"))
+        self.assertTrue(self._due(d(12, 1), "2026-09-15T06:03:00+03:00"))
+        self.assertFalse(self._due(d(23, 50), "2026-09-15T12:04:00+03:00"))
+
+    def test_catches_up_after_missed_runs(self):
+        self.assertTrue(self._due(datetime(2026, 9, 15, 9, 0, tzinfo=self.KYIV), "2026-09-13T12:00:00+03:00"))
+
+    def test_missing_file_always_due(self):
+        self.assertTrue(self._due(datetime(2026, 9, 15, 3, 0, tzinfo=self.KYIV), None))
+
+    def test_last_slot_before_first_slot_of_day(self):
+        slot = build_schedule.last_slot(datetime(2026, 9, 15, 4, 0, tzinfo=self.KYIV), [6, 12])
+        self.assertEqual((slot.day, slot.hour), (14, 12))
 
 
 class KyivTzTests(unittest.TestCase):
