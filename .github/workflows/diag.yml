@@ -1,27 +1,25 @@
 name: Diag network
-# Ручна діагностика: чи доступні хости УЗ з раннера GitHub напряму і через проксі з секрету UZ_PROXY.
+# Ручна діагностика: якими шляхами раннер GitHub (США) може дістати сайт УЗ.
+# Сайт відповідає лише європейським мережам, тому потрібен шлюз у Європі.
 on:
   workflow_dispatch:
 jobs:
   diag:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     env:
-      UZ_PROXY: ${{ secrets.UZ_PROXY }}
+      UZ_GATEWAY: ${{ secrets.UZ_GATEWAY }}
     steps:
-      - name: Probe hosts from the GitHub runner
+      - name: Probe
         run: |
-          probe() { printf '%-60s ' "$1"; curl -s -o /tmp/b -m 25 -A "Mozilla/5.0" "${@:2}" -w "HTTP %{http_code} in %{time_total}s bytes %{size_download}" "$1" || printf 'FAIL(curl %s)' "$?"; echo " | eltrain=$(grep -c -E 'ElTrain|6685' /tmp/b 2>/dev/null)"; }
           UZ="https://swrailway.gov.ua/timetable/eltrain/?sid1=2528&sid2=2538&dateR=0"
-          echo "runner egress ip: $(curl -s -m 10 https://api.ipify.org)"
-          echo "--- direct ---"
-          probe "$UZ"
-          probe "https://www.uz.gov.ua/"
-          probe "https://www.pz.gov.ua/"
-          if [ -n "$UZ_PROXY" ]; then
-            echo "--- via UZ_PROXY ---"
-            echo "proxy egress ip: $(curl -s -m 30 -x "$UZ_PROXY" https://api.ipify.org) ($(curl -s -m 30 -x "$UZ_PROXY" https://ipinfo.io/country))"
-            probe "$UZ" -x "$UZ_PROXY"
-          else
-            echo "--- UZ_PROXY secret is not set: skipping proxy probe ---"
-          fi
+          ENC="https%3A%2F%2Fswrailway.gov.ua%2Ftimetable%2Feltrain%2F%3Fsid1%3D2528%26sid2%3D2538%26dateR%3D0"
+          probe() { printf '%-34s ' "$1"; code=$(curl -s -o /tmp/b -m 45 -A "Mozilla/5.0" -w '%{http_code}' "$2" || echo "curl-err"); printf 'HTTP %-8s bytes %-7s trains %s\n' "$code" "$(stat -c%s /tmp/b 2>/dev/null)" "$(grep -c -E '6685|6687' /tmp/b 2>/dev/null)"; }
+          echo "runner ip: $(curl -s -m 10 https://api.ipify.org) ($(curl -s -m 10 https://ipinfo.io/country))"
+          probe "direct"            "$UZ"
+          probe "cors.lol"          "https://api.cors.lol/?url=$ENC"
+          probe "allorigins/raw"    "https://api.allorigins.win/raw?url=$ENC"
+          probe "codetabs"          "https://api.codetabs.com/v1/proxy?quest=$ENC"
+          probe "whateverorigin"    "https://www.whateverorigin.org/get?url=$ENC"
+          probe "corsproxy.io"      "https://corsproxy.io/?url=$ENC"
+          if [ -n "$UZ_GATEWAY" ]; then probe "own gateway" "${UZ_GATEWAY}${ENC}"; else echo "own gateway                         (secret UZ_GATEWAY not set)"; fi
