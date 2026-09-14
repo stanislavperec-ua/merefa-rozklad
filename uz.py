@@ -90,9 +90,11 @@ RETRIES = 3
 # Азія, РФ отримують TCP timeout). GitHub Actions і Render працюють у США, тому запити
 # йдуть через відкриті шлюзи, розміщені в Європі. {url} підставляється URL-encoded.
 GATEWAYS = [
+    # Власний Cloudflare Worker (worker.js): основний і надійний шлях, без лімітів на нашу потребу
+    "https://merefa-uz-gateway.stanislav-perec.workers.dev/fetch?url={url}",
+    # Запасні публічні шлюзи на випадок, якщо воркер недоступний
     "https://api.cors.lol/?url={url}",
     "https://api.codetabs.com/v1/proxy?quest={url}",
-    "https://api.allorigins.win/raw?url={url}",
 ]
 GATEWAY_MARKER = "ElTrain"   # ознака справжньої сторінки: шлюз міг повернути свою помилку
 
