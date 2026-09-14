@@ -85,10 +85,10 @@ REQUEST_TIMEOUT = 60
 CONNECT_TIMEOUT = 15
 RETRIES = 3
 
-# Сайт УЗ приймає з'єднання лише з європейських мереж: перевірено з 25 вузлів світу
-# (Нідерланди, Фінляндія, Австрія, Британія, Молдова, Україна відповідають; США, Канада,
-# Азія, РФ отримують TCP timeout). GitHub Actions і Render працюють у США, тому запити
-# йдуть через відкриті шлюзи, розміщені в Європі. {url} підставляється URL-encoded.
+# Сайт УЗ відкидає з'єднання з діапазонів великих хмар (Amazon, Microsoft, Google):
+# перевірено, що навіть Render у регіоні Frankfurt (AWS) отримує timeout, тоді як Hetzner
+# і Cloudflare проходять. Тому запити з хмари йдуть через Cloudflare Worker (worker.js).
+# {url} підставляється URL-encoded.
 GATEWAYS = [
     # Власний Cloudflare Worker (worker.js): основний і надійний шлях, без лімітів на нашу потребу
     "https://merefa-uz-gateway.stanislav-perec.workers.dev/fetch?url={url}",
