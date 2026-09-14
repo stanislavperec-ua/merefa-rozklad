@@ -4,12 +4,10 @@ name: Update schedule data
 #   * build_live.py : канал УЗ (затримки, скасування) щопівгодини, доступний звідусіль;
 #   * розклад swrailway.gov.ua : тричі на добу, о 06:00, 10:00 і 13:00 за Києвом.
 #
-# Сайт УЗ відкидає з'єднання з великих хмар (Amazon, Microsoft, Google), тому ні раннер
-# GitHub, ні Render до нього не дістають напряму. Запити йдуть через Cloudflare Worker
-# (worker.js), який не заблокований.
-#   * якщо заданий секрет GATEWAY_URL (адреса бота на Render), workflow просить бота
-#     оновити розклад: той збирає через Worker і комітить schedule.json сам;
-#   * якщо секрету немає, workflow збирає власними силами через шлюзи з секрету UZ_GATEWAYS.
+# Сайт УЗ відкидає з'єднання з великих хмар (Amazon, Microsoft, Google), тому раннер GitHub
+# не дістає його напряму. Запити йдуть через Cloudflare Worker (worker.js), адреса якого
+# зашита в uz.GATEWAYS. Збірка виконується тут, а не на Render: безкоштовний Render має
+# 0.1 CPU і розбирає 60 сторінок понад 20 хвилин, тоді як раннер укладається в хвилину.
 
 on:
   schedule:
@@ -37,7 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
       UZ_GATEWAYS: ${{ secrets.UZ_GATEWAYS }}
       SLOTS: "6,10,13"
     steps:
@@ -53,37 +50,13 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests
 
-      - name: Timetable via collector service
-        id: gateway
-        if: env.GATEWAY_URL != ''
-        continue-on-error: true
-        env:
-          FORCE: ${{ inputs.force }}
-        run: |
-          if [ "$FORCE" != "true" ] && ! python build_schedule.py --slots "$SLOTS" --check-only; then
-            echo "Слот ще не настав, розклад не чіпаємо"
-            exit 0
-          fi
-          echo "Буджу сервіс (безкоштовний Render засинає, холодний старт до хвилини)"
-          curl -s -m 120 -o /dev/null "$GATEWAY_URL/" || true
-          curl -s -m 120 -X POST "$GATEWAY_URL/refresh?force=1" | head -c 300; echo
-          for i in $(seq 1 40); do
-            sleep 10
-            BODY=$(curl -s -m 30 "$GATEWAY_URL/status")
-            echo "$BODY" | python -c "import sys,json; d=json.load(sys.stdin); print('running',d['running'],'| ok',d['ok'],'|',d['message'][:80])" || continue
-            if echo "$BODY" | python -c "import sys,json; sys.exit(0 if not json.load(sys.stdin)['running'] else 1)"; then
-              echo "$BODY" | python -c "import sys,json; sys.exit(0 if json.load(sys.stdin)['ok'] else 1)"
-              exit $?
-            fi
-          done
-          echo "Сервіс не відповів вчасно"; exit 1
-
-      - name: Timetable fallback (direct build via gateways)
-        if: env.GATEWAY_URL == ''
+      - name: Official timetable (via Cloudflare Worker)
+        id: timetable
         continue-on-error: true
         env:
           FORCE: ${{ inputs.force }}
           REFRESH: ${{ inputs.refresh_cache }}
+          UZ_DIRECT: "0"
         run: |
           ARGS="--slots $SLOTS"
           [ "$FORCE" = "true" ] && ARGS="$ARGS --force"
@@ -94,7 +67,7 @@ jobs:
         run: python build_live.py
 
       - name: Report timetable failure
-        if: steps.gateway.outcome == 'failure'
+        if: steps.timetable.outcome == 'failure'
         run: echo "::warning::Розклад не оновлено (сервіс-збирач недоступний); live.json оновлено"
 
       - name: Commit and push
