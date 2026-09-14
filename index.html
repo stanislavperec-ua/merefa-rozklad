@@ -291,14 +291,14 @@
   h2   { font-size: 17px; font-weight: 900; margin-bottom: 3px; }
   .hint { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
   .legend {
-    font-size: 11px; color: #aac8e8;
+    font-size: 10px; color: var(--muted);
     margin-bottom: 10px;
-    padding: 5px 9px;
-    background: var(--card);
+    padding: 4px 8px;
     border-radius: 5px;
-    border: 1px solid var(--border);
+    border: 1px dashed var(--border);
     line-height: 1.7;
   }
+  .legend .badge { opacity: .7; font-size: 9px; padding: 1px 5px; }
 
   .dir-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; margin-top: 2px; }
   .dir-bar  { width: 4px; height: 18px; border-radius: 2px; flex-shrink: 0; }
@@ -344,7 +344,9 @@
 
   tr.row-cancelled td { opacity: .6; }
   tr.row-off td { opacity: .5; }
-  tr.past td { opacity: .38; }
+  /* Рейс, що вже відправився сьогодні: лише трохи тьмяніший час, решта рядка як є */
+  tr.past .t-time { color: #c9b13f; }
+  tr.past .t-num { color: #d5dde8; }
   tr.next td { background: #0c2418 !important; box-shadow: inset 3px 0 0 var(--green); }
   tr.next .t-time { color: #5cffa8; }
 
@@ -819,6 +821,8 @@ function renderStation(key, res) {
 
   const section = (dir, list, color, title, colHead, endHead) => {
     const next = isToday ? list.find(t => t.status === "ok" && !isCancelled(t) && t.dep >= nm) : null;
+    // Минулі рейси позначаємо лише поки попереду ще є рейси; пізно ввечері список показуємо як є
+    const markPast = isToday && !!next;
     html += `
       <div class="dir-head">
         <div class="dir-bar" style="background:${color}"></div>
@@ -837,7 +841,7 @@ function renderStation(key, res) {
         `<span class="t-num">${esc(t.num)}</span><br><span class="${dir === "m" ? "t-sub-green" : "t-sub-blue"}">${esc(sub)}</span>`,
         timeHtml(t, t.end),
         noteHtml(t)
-      ], { past: isToday && t.status === "ok" && t.dep < nm, next: next && next.tid === t.tid, curSid: sid });
+      ], { past: markPast && t.status === "ok" && t.dep < nm, next: next && next.tid === t.tid, curSid: sid });
     });
     html += `</tbody></table></div>`;
   };
@@ -871,6 +875,7 @@ function renderRoute(key, res) {
     .filter(t => t.dep != null && t.arr != null)
     .sort((x, y) => x.dep - y.dep);
   const next = isToday ? rd.find(t => t.status === "ok" && !isCancelled(t) && t.dep >= nm) : null;
+  const markPast = isToday && !!next;
 
   html += `
     <div style="margin-bottom:10px">
@@ -889,7 +894,7 @@ function renderRoute(key, res) {
       timeHtml(t, t.arr),
       `<span class="t-num">${esc(t.num)}</span> <span class="t-dur">${dur(t.arr - t.dep)}</span><br><span class="${going ? "t-sub-green" : "t-sub-blue"}">${esc(going ? t.to : t.from)}</span>`,
       noteHtml(t)
-    ], { past: isToday && t.status === "ok" && t.dep < nm, next: next && next.tid === t.tid, curSid: a });
+    ], { past: markPast && t.status === "ok" && t.dep < nm, next: next && next.tid === t.tid, curSid: a });
   });
   html += `</tbody></table></div>`;
   return html;
