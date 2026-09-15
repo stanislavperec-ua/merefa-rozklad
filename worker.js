@@ -137,6 +137,7 @@ async function handleBatch(request, env) {
   return Response.json({
     ok: done.filter(d => d.ok).length,
     failed: done.filter(d => !d.ok).map(d => d.id),
+    colo: await colo(),
   });
 }
 
@@ -193,7 +194,8 @@ async function runUpdate(env, force) {
   for (let round = 0; round < 4 && tasks.length; round++) {
     for (let i = 0; i < tasks.length; i += PAGES_PER_CALL) {
       const part = await runBatch(start.session, tasks.slice(i, i + PAGES_PER_CALL), env);
-      log.push("порція " + part.ok + " із " + Math.min(PAGES_PER_CALL, tasks.length - i));
+      log.push("порція " + part.ok + " із " + Math.min(PAGES_PER_CALL, tasks.length - i) +
+               " (" + (part.colo || "?") + ")");
     }
     phase = await askBot("/fast/state?session=" + encodeURIComponent(start.session), undefined, env);
     log.push("фаза " + phase.phase + ", лишилось " + phase.pending);
@@ -266,9 +268,44 @@ export default {
 
   // Cron Trigger: питає бота, чи настав слот оновлення, і якщо так, збирає розклад.
   // FORCE_CRON=1 у змінних воркера змушує збирати одразу: так перевіряють цей шлях.
+  //
+  // Сам Cron Trigger виконується там, де вирішить Cloudflare (перевірено: Сінгапур), а
+  // сайт УЗ звідти майже не відповідає. Тому робота передається Durable Object, який
+  // прив'язаний до Європи через locationHint і виконується у Варшаві.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runUpdate(env, env.FORCE_CRON === "1").then(
-      res => console.log("оновлення:", JSON.stringify(res)),
-      err => console.log("оновлення не вдалося:", String(err))));
+    ctx.waitUntil((async () => {
+      try {
+        const force = env.FORCE_CRON === "1";
+        if (!env.SCHEDULER) {
+          console.log("оновлення без DO:", JSON.stringify(await runUpdate(env, force)));
+          return;
+        }
+        const stub = env.SCHEDULER.get(env.SCHEDULER.idFromName("merefa"), { locationHint: "eeur" });
+        const r = await stub.fetch("https://scheduler/tick" + (force ? "?force=1" : ""));
+        console.log("оновлення через DO:", await r.text());
+      } catch (e) {
+        console.log("оновлення не вдалося:", String(e));
+      }
+    })());
   },
 };
+
+/**
+ * Виконавець у Європі. Durable Object живе там, де його створили, а locationHint прив'язує
+ * його до Східної Європи, тож запити до сайту УЗ ідуть з дата-центру, який сайт пускає.
+ */
+export class Scheduler {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    const force = new URL(request.url).searchParams.get("force") === "1";
+    try {
+      return Response.json(await runUpdate(this.env, force));
+    } catch (e) {
+      return Response.json({ ok: false, error: String(e) }, { status: 500 });
+    }
+  }
+}
