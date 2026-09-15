@@ -298,15 +298,9 @@ def refresh():
     with state_lock:
         if state["running"]:
             return cors(jsonify(status="running", **public_state()))
-        last = state.get("finished")
-        if last and not request.args.get("force"):
-            try:
-                since = datetime.now(KYIV) - datetime.fromisoformat(last)
-                if since < MIN_INTERVAL:
-                    wait = int((MIN_INTERVAL - since).total_seconds())
-                    return cors(jsonify(status="too_soon", wait_seconds=wait, **public_state()))
-            except ValueError:
-                pass
+        wait = 0 if request.args.get("force") else seconds_to_wait()
+        if wait:
+            return cors(jsonify(status="too_soon", wait_seconds=wait, **public_state()))
         try:
             days = int(request.args.get("days", HORIZON))
         except ValueError:
