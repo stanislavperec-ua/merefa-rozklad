@@ -189,7 +189,9 @@ def do_refresh() -> None:
         except Exception as e:  # noqa: BLE001
             log.warning("Кеш поїздів недоступний, збираю без нього: %s", e)
 
-        client = uz.Client()          # маршрути: прямий (у хмарі не працює) і Cloudflare Worker
+        # Сервіс працює в хмарі, де прямий маршрут завжди впирається в таймаут 15 с
+        # на кожному запиті, тому лишаємо тільки Cloudflare Worker.
+        client = uz.Client(direct=False)
         horizon = state.get("horizon") or HORIZON
         schedule = build_schedule.build(client, datetime.now(KYIV).date(), horizon, cache, False)
 

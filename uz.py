@@ -89,12 +89,10 @@ RETRIES = 6
 # перевірено, що навіть Render у регіоні Frankfurt (AWS) отримує timeout, тоді як Hetzner
 # і Cloudflare проходять. Тому запити з хмари йдуть через Cloudflare Worker (worker.js).
 # {url} підставляється URL-encoded.
+# Тільки власний Cloudflare Worker: публічні шлюзи перевірено і прибрано, бо вони лише
+# додавали затримку (api.cors.lol віддає 429 після десятка запитів, api.codetabs 522).
 GATEWAYS = [
-    # Власний Cloudflare Worker (worker.js): основний і надійний шлях, без лімітів на нашу потребу
     "https://merefa-uz-gateway.stanislav-perec.workers.dev/fetch?url={url}",
-    # Запасні публічні шлюзи на випадок, якщо воркер недоступний
-    "https://api.cors.lol/?url={url}",
-    "https://api.codetabs.com/v1/proxy?quest={url}",
 ]
 GATEWAY_MARKER = "ElTrain"   # ознака справжньої сторінки: шлюз міг повернути свою помилку
 # 520-524 від Cloudflare означають, що сайт УЗ не відповів воркеру. Причина не в частоті:
