@@ -368,7 +368,10 @@
   .t-sub-green { color: var(--green); }
   .nodata     { padding: 14px 6px; color: var(--dim); font-size: 13px; }
 
-  tr.row-cancelled td { opacity: .6; }
+  /* Скасований рейс лишається в переліку на своєму місці, але червоним: так видно, що
+     поїзда цього дня немає, а не що застосунок його загубив */
+  tr.row-cancelled td { background: #2b0f14; opacity: .85; }
+  tr.row-cancelled:hover td { background: #3a1419; }
   tr.row-off td { opacity: .5; }
   /* Рейс, що вже відправився сьогодні: лише трохи тьмяніший час, решта рядка як є */
   tr.past .t-time { color: #c9b13f; }
@@ -873,12 +876,19 @@ function trainsFor(key) {
   info.running.forEach(tid => push(tid, "ok"));
   info.cancelled.forEach(c => push(c.tid, "cancelled", c.note));
   info.off.forEach(c => push(c.tid, "off", c.note));
+  // Поїзди, які курсують сьогодні, а на обрану дату вже ні (скасовані наказом УЗ, а не
+  // на одну дату): лишаємо їх у переліку червоним рядком, інакше здається, що рейс зник
+  const diff = diffFromToday(key);
+  (diff ? diff.gone : []).forEach(t => {
+    if (list.some(x => x.tid === t.tid)) return;
+    push(t.tid, "gone", noteFor(t, key) || "З цієї дати поїзд не курсує (за даними УЗ)");
+  });
   return { list, verified: info.verified };
 }
 const stopAt = (t, sid) => t.stops?.[String(sid)] || null;
 const depAt  = (t, sid) => { const s = stopAt(t, sid); return s ? toMin(s.dep || s.arr) : null; };
 const arrAt  = (t, sid) => { const s = stopAt(t, sid); return s ? toMin(s.arr || s.dep) : null; };
-const isCancelled = t => t.status === "cancelled" || t.live?.kind === "cancel";
+const isCancelled = t => t.status === "cancelled" || t.status === "gone" || t.live?.kind === "cancel";
 const stName = sid => (STATIONS.find(s => String(s.sid) === String(sid)) || {}).name || "";
 
 // ── Що змінюється на обрану дату ────────────────────────
@@ -987,7 +997,7 @@ function renderBanner(key, res) {
   }
   // На майбутню дату головне не «змін немає», а те, чим вона відрізняється від сьогодні
   const diff = diffFromToday(key);
-  if (diff && !offline && !cancelled.length) {
+  if (diff && !offline) {
     const parts = [];
     if (diff.gone.length) parts.push(`не курсують ${diff.gone.map(t => "№" + t.num).join(", ")}`);
     if (diff.moved.length) parts.push(`інший час у ${diff.moved.map(m => "№" + m.num).join(", ")}`);
@@ -1002,7 +1012,8 @@ function renderBanner(key, res) {
   statusEl.className = offline ? "error" : schedAge > 36 ? "stale" : "fresh";
 
   const cnt = document.getElementById("chg-cnt");
-  const n = cancelled.length + delays.length + (diff ? diff.count : 0);
+  // поїзди, що більше не курсують, уже пораховані в cancelled (вони в переліку червоні)
+  const n = cancelled.length + delays.length + (diff ? diff.moved.length + diff.added.length : 0);
   cnt.hidden = n === 0; cnt.textContent = n;
 }
 
@@ -1012,6 +1023,7 @@ function timeHtml(t, m) {
 }
 function noteHtml(t) {
   if (t.status === "cancelled") return `<span class="badge badge-cancel">Скасовано</span>`;
+  if (t.status === "gone") return `<span class="badge badge-cancel">Не курсує</span>`;
   if (t.status === "off") return `<span class="badge badge-off">Не курсує</span>`;
   if (t.live) {
     const k = t.live.kind;
@@ -1025,7 +1037,7 @@ function noteHtml(t) {
 }
 function rowHtml(t, cells, opts) {
   const cls = ["clickable",
-    t.status === "cancelled" ? "row-cancelled" : "",
+    (t.status === "cancelled" || t.status === "gone") ? "row-cancelled" : "",
     t.status === "off" ? "row-off" : "",
     opts.past ? "past" : "",
     opts.next ? "next" : ""
@@ -1210,10 +1222,12 @@ function renderChanges(key, res) {
     });
     html += `</div>`;
   } else {
-    html += `<div class="chg-card green"><h3>✓ ${shortDate(key)}: СКАСУВАНЬ НЕМАЄ</h3>
+    const gone = res.list.filter(t => t.status === "gone");
+    html += `<div class="chg-card green"><h3>✓ ${shortDate(key)}: СКАСУВАНЬ НА ЦЮ ДАТУ НЕМАЄ</h3>
       ${res.verified
-        ? (diff ? "Зміни, оголошені УЗ, уже враховано в розкладі вище: жоден рейс, що діє на цю дату, не скасовано."
-                : "Усі поїзди за терміном дії присутні в розкладі УЗ на цю дату.")
+        ? (gone.length
+            ? `Поїзди, скасовані наказом УЗ (${gone.map(t => "№" + esc(t.num)).join(", ")}), показані вище і позначені червоним у розкладі. Решта рейсів курсує за графіком.`
+            : "Усі поїзди за терміном дії присутні в розкладі УЗ на цю дату.")
         : "Дата поза перевіреним періодом: показано плановий розклад за терміном дії поїздів."}</div>`;
   }
 
