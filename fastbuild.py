@@ -42,7 +42,7 @@ log = logging.getLogger("fastbuild")
 
 SESSION_TTL = 900          # сесія живе 15 хвилин
 SESSION_LIMIT = 3          # більше одночасних збірок пам'яті сервісу не треба
-MAX_HORIZON = 21
+MAX_HORIZON = 31          # сайт УЗ віддає розклад щонайменше на два місяці вперед
 MAX_PAGE_CHARS = 600_000   # сторінка УЗ важить до 40 тис. символів, із запасом
 MAX_PAGES_PER_BATCH = 16
 

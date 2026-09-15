@@ -65,7 +65,10 @@ FAST_TOKEN = os.environ.get("FAST_TOKEN", "")        # спільний секр
 SLOT_HOURS = [int(h) for h in os.environ.get("SLOTS", "6,13").split(",") if h.strip()]
 HORIZON = int(os.environ.get("HORIZON_DAYS", "4"))   # повільний шлях бере найближчі дні:
 # сайт УЗ з мережі Render відповідає неохоче, тому там важлива швидкість відповіді
-FAST_HORIZON = int(os.environ.get("FAST_HORIZON_DAYS", "14"))  # швидкий шлях устигає за всі
+FAST_HORIZON = int(os.environ.get("FAST_HORIZON_DAYS", "14"))  # кнопка: найближчі два тижні
+# Автоматика (Cloudflare Worker за розкладом) бере місяць: УЗ оголошує скасування і зміни
+# графіка заздалегідь, і чим далі видно, тим більше таких змін застосунок покаже одразу.
+CRON_HORIZON = int(os.environ.get("CRON_HORIZON_DAYS", "30"))
 MIN_INTERVAL = timedelta(minutes=int(os.environ.get("MIN_REFRESH_MINUTES", "5")))
 MAX_BODY = 12 * 1024 * 1024                          # більше сторінки розкладу не важать
 TIMEOUT = (15, 60)
@@ -335,8 +338,8 @@ def refresh():
         except ValueError:
             days = HORIZON
         state.update(running=True, started=datetime.now(KYIV).isoformat(timespec="seconds"),
-                     finished=None, ok=None, horizon=max(1, min(days, 21)),
-                     message=f"збираю розклад з сайту УЗ ({max(1, min(days, 21))} дн.)")
+                     finished=None, ok=None, horizon=max(1, min(days, fastbuild.MAX_HORIZON)),
+                     message=f"збираю розклад з сайту УЗ ({max(1, min(days, fastbuild.MAX_HORIZON))} дн.)")
         payload = public_state()
     threading.Thread(target=do_refresh, daemon=True).start()
     return cors(jsonify(status="started", **payload))
@@ -516,11 +519,13 @@ def fast_start():
     wait = 0 if data.get("force") else seconds_to_wait()
     if wait:
         return cors(jsonify(status="too_soon", wait_seconds=wait, **public_state()))
+    worker = from_worker()
     try:
         days = int(data.get("days") or FAST_HORIZON)
     except (TypeError, ValueError):
         days = FAST_HORIZON
-    worker = from_worker()
+    if worker:
+        days = max(days, CRON_HORIZON)     # кнопка лишається швидкою, автоматика бере місяць
     telegram = bool(fastbuild.check_init_data(str(data.get("initData") or ""), BOT_TOKEN))
     trusted = worker or telegram          # ці двоє качають сторінки самі, звірка їм не потрібна
     cache, cache_sha = load_cache()

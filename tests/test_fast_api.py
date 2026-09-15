@@ -300,6 +300,20 @@ class FastApiTests(unittest.TestCase):
         finally:
             gateway.FAST_TOKEN = ""
 
+    def test_worker_collects_a_month(self):
+        """Автоматика бере місяць: УЗ оголошує зміни заздалегідь, і їх видно одразу."""
+        gateway.FAST_TOKEN = "секрет-воркера"
+        try:
+            plan = self.post("/fast/start", {"days": 14, "force": True}, token="секрет-воркера").get_json()
+            self.assertEqual(plan["horizon"], gateway.CRON_HORIZON)
+            self.assertEqual(len(plan["tasks"]), 2 + 2 * gateway.CRON_HORIZON)
+            gateway.fast_sessions = fastbuild.SessionStore()
+            gateway.state.update(finished=None)
+            button = self.post("/fast/start", {"days": 14, "force": True}).get_json()
+            self.assertEqual(button["horizon"], 14, "кнопка лишається швидкою")
+        finally:
+            gateway.FAST_TOKEN = ""
+
     def test_page_route_takes_raw_body(self):
         """Воркер ллє сторінку сирим тілом, бо на розбір у нього немає процесорного часу."""
         started = self.post("/fast/start", {"days": 1, "force": True}).get_json()

@@ -17,12 +17,13 @@
  *     читаються в пам'ять: тіло відповіді сайту одразу ллється потоком у бота;
  *   * 15 хв на виконання Cron Trigger       → з запасом, повне оновлення триває секунди.
  *
- * Розгортання: https://dash.cloudflare.com → Compute (Workers) → merefa-uz-gateway →
- * Edit code → вставити цей файл → Deploy. Далі Settings → Variables and Secrets:
- * секрет FAST_TOKEN (той самий рядок, що у змінній FAST_TOKEN бота на Render).
- * Settings → Trigger Events → Cron Triggers: кожні пів години у вікні 02-12 UTC
- * (вираз cron: зірочка навскіс 30, потім 2-12 і три зірочки). Воркер щоразу питає бота,
- * чи вже настав слот 06:00 або 13:00 за Києвом, і зазвичай одразу виходить.
+ * Розгортання: редактор дашборда автоматизації не піддається, тому код заливається
+ * через API: PUT /accounts/<acc>/workers/scripts/merefa-uz-gateway, multipart із metadata
+ * (обов'язково "keep_bindings": ["secret_text"], інакше злетить секрет) і цим файлом.
+ * Налаштування воркера: секрет FAST_TOKEN (той самий, що у бота на Render), прив'язки
+ * SELF (service на самого себе) і SCHEDULER (Durable Object, клас Scheduler), а також
+ * два Cron Triggers у вікнах 03-05 і 10-12 UTC. Воркер щоразу питає бота, чи вже настав
+ * слот 06:00 або 13:00 за Києвом, і зазвичай одразу виходить.
  *
  * Маршрути:
  *   GET  /            health-check
@@ -37,7 +38,7 @@ const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
 
 const BOT = "https://merefa-rozklad.onrender.com";
 const SELF = "https://merefa-uz-gateway.stanislav-perec.workers.dev";
-const HORIZON_DAYS = 14;
+const HORIZON_DAYS = 14;       // бот розширює горизонт для автоматики сам (див. CRON_HORIZON_DAYS)
 const PAGES_PER_CALL = 20;     // сторінок на один виклик /batch: 20 качань + 20 пересилань = 40 підзапитів
 const AT_ONCE = 5;             // скільки сторінок качаємо одночасно, щоб не навантажувати сайт
 const WAKE_TIMEOUT_MS = 120000; // бот на безкоштовному Render прокидається до хвилини
@@ -157,7 +158,6 @@ async function runBatch(session, tasks, env) {
   return r.json();
 }
 
-// Повне оновлення: план у бота → сторінки порціями → збірка і коміт
 // Сайт УЗ пускає не кожен дата-центр Cloudflare, а воркер виконується поруч із тим, хто
 // його покликав. Знати колокацію треба, щоб розуміти, чому сторінки не даються.
 async function colo() {
@@ -169,6 +169,7 @@ async function colo() {
   }
 }
 
+// Повне оновлення: план у бота → сторінки порціями → збірка і коміт
 async function runUpdate(env, force) {
   const place = await colo();
   const log = ["дата-центр " + place];
