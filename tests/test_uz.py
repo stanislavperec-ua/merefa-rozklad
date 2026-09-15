@@ -300,13 +300,13 @@ class GatewayTests(unittest.TestCase):
             def get(self, url, timeout=None):
                 return FakeResp(*responses.pop(0))
 
-        old_pause = uz.BUSY_PAUSE
-        uz.BUSY_PAUSE = 0.01
+        old_min, old_max = uz.BUSY_PAUSE_MIN, uz.BUSY_PAUSE_MAX
+        uz.BUSY_PAUSE_MIN, uz.BUSY_PAUSE_MAX = 0.01, 0.02
         try:
             c = uz.Client(session=FakeSession(), pause=0, gateways=["https://gw/?url={url}"], direct=False)
             rows = uz.parse_pair_list(c.get(sid1=2528, sid2=2538, dateR=0))
         finally:
-            uz.BUSY_PAUSE = old_pause
+            uz.BUSY_PAUSE_MIN, uz.BUSY_PAUSE_MAX = old_min, old_max
         self.assertEqual(len(rows), 14)
         self.assertEqual(c.busy_hits, 2)
 

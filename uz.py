@@ -100,7 +100,10 @@ GATEWAY_MARKER = "ElTrain"   # ознака справжньої сторінк�
 # а інші (SEA, VIE) пускає. Тому після відмови не чекаємо довго, а швидко пробуємо ще раз:
 # наступна спроба з високою ймовірністю потрапить у дозволений дата-центр.
 BUSY_STATUSES = {520, 521, 522, 523, 524, 429, 503}
-BUSY_PAUSE = 2.0
+# Сайт обмежує частоту за адресою відправника, тому пауза адаптивна: після відмови росте,
+# після кількох успіхів поспіль знижується. Так збірка сама підлаштовується під ліміт.
+BUSY_PAUSE_MIN = 2.0
+BUSY_PAUSE_MAX = 75.0
 
 # Станції в порядку від Харкова. sid: код станції на swrailway.gov.ua.
 STATIONS = [
@@ -214,6 +217,8 @@ class Client:
         self.route: str | None = self.routes[0]
         self.route_log: list[str] = []
         self.busy_hits = 0          # скільки разів сайт відповів «зайнято»
+        self.backoff = 0.0          # поточна додаткова пауза після відмов
+        self._streak = 0            # успіхів поспіль
 
     @staticmethod
     def _url(route: str | None, params: dict) -> str:
@@ -223,19 +228,34 @@ class Client:
         return route.replace("{url}", quote(target, safe=""))
 
     def _pause_for(self, route: str | None) -> float:
-        return self.pause if route is None else max(self.pause, GATEWAY_PAUSE)
+        base = self.pause if route is None else max(self.pause, GATEWAY_PAUSE)
+        return base + self.backoff
+
+    def _on_busy(self) -> None:
+        """Сайт відмовив: збільшуємо паузу (2, 6, 18, 54, далі стеля)."""
+        self.busy_hits += 1
+        self._streak = 0
+        self.backoff = min(BUSY_PAUSE_MAX, max(BUSY_PAUSE_MIN, self.backoff * 3 or BUSY_PAUSE_MIN))
+
+    def _on_success(self) -> None:
+        """Три успіхи поспіль: пробуємо прискоритись."""
+        self._streak += 1
+        if self._streak >= 3 and self.backoff:
+            self.backoff = max(0.0, self.backoff / 2)
+            self._streak = 0
 
     def _fetch(self, route: str | None, params: dict) -> str:
         r = self.session.get(self._url(route, params), timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT))
         self.requests_made += 1
         if r.status_code in BUSY_STATUSES:
-            self.busy_hits += 1
+            self._on_busy()
             raise UZError(f"сайт УЗ зайнятий (HTTP {r.status_code})")
         r.raise_for_status()
         r.encoding = "utf-8"
         text = r.text
         if GATEWAY_MARKER not in text:
             raise UZError(f"відповідь не схожа на сторінку ElTrain ({len(text)} символів)")
+        self._on_success()
         return text
 
     def get(self, **params) -> str:
@@ -261,7 +281,7 @@ class Client:
                     log.warning("UZ %s через %s: спроба %d/%d невдала: %s",
                                 params, route or "напряму", attempt, RETRIES, str(e)[:160])
                     if "зайнятий" in str(e):
-                        time.sleep(BUSY_PAUSE)
+                        log.info("Пауза зросла до %.0f с", self.backoff)
             time.sleep(2 * attempt)
         raise UZError(f"не вдалося завантажити {params}: {last_err}")
 
