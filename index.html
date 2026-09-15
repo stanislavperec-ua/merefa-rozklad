@@ -571,16 +571,11 @@ const dur = n => n >= 60 ? `${Math.floor(n/60)}г ${n%60}хв` : `${n}хв`;
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 function formatDateBox(d) {
-  const diff = Math.round((d - today()) / 86400000);
-  let prefix = "";
-  if (diff === 0) prefix = "Сьогодні · ";
-  else if (diff === 1) prefix = "Завтра · ";
-  else if (diff === -1) prefix = "Вчора · ";
-  // Короткий формат: у шапці мало місця, довгий день тижня обрізався на пів слова
-  const wd = DAYS[d.getDay()].slice(0, 2);
-  if (prefix) return `📅 ${prefix.replace(" · ", "")}, ${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}`;
-  return `📅 ${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}, ${wd}`;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `📅 ${dd}.${mm}.${d.getFullYear()}`;
 }
+
 function updateDateBox() { document.getElementById("date-box").textContent = formatDateBox(selectedDate); }
 
 // ── Date Picker ─────────────────────────────────────────
