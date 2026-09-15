@@ -80,10 +80,10 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/120.0 Safari/537.36 merefa-rozklad/2.0"
 )
 REQUEST_PAUSE = 0.4          # пауза між запитами, щоб не навантажувати сайт
-GATEWAY_PAUSE = 1.5          # через шлюз повільніше: у публічних сервісів є ліміт запитів
+GATEWAY_PAUSE = 3.0          # сайт УЗ віддає 522, якщо шлюз стукає надто часто
 REQUEST_TIMEOUT = 60
 CONNECT_TIMEOUT = 15
-RETRIES = 3
+RETRIES = 4
 
 # Сайт УЗ відкидає з'єднання з діапазонів великих хмар (Amazon, Microsoft, Google):
 # перевірено, що навіть Render у регіоні Frankfurt (AWS) отримує timeout, тоді як Hetzner
