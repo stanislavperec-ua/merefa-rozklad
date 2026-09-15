@@ -102,7 +102,18 @@ def is_fresh(entry: dict | None, now: datetime) -> bool:
     return (now - fetched) < timedelta(days=CACHE_TTL_DAYS)
 
 
-def build(client: uz.Client, today: date, horizon: int, cache: dict, refresh_cache: bool) -> dict:
+def needs_train_page(row: uz.TrainRow, cache: dict, now: datetime, refresh_cache: bool = False) -> bool:
+    """Чи треба тягнути сторінку поїзда, чи вистачить кешу.
+
+    Сторінка потрібна, якщо кеш старий або порожній, або якщо в переліку стоїть червоний
+    лічильник повідомлень: тоді на сторінці є свіжий блок «Зміни руху».
+    """
+    if refresh_cache or row.has_notes:
+        return True
+    return not is_fresh(cache.get(row.tid), now)
+
+
+def build(client, today: date, horizon: int, cache: dict, refresh_cache: bool) -> dict:
     now = now_kyiv()
     errors: list[str] = []
     dates = [(today + timedelta(days=i)).isoformat() for i in range(horizon)]
@@ -153,8 +164,7 @@ def build(client: uz.Client, today: date, horizon: int, cache: dict, refresh_cac
     trains: dict[str, dict] = {}
     for tid, row in rows_by_tid.items():
         cached = cache.get(tid)
-        fresh = is_fresh(cached, now) and not refresh_cache
-        if fresh and not row.has_notes:
+        if not needs_train_page(row, cache, now, refresh_cache):
             entry = dict(cached)
             entry["notes"] = []           # лічильник повідомлень = 0
         else:

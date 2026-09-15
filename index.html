@@ -696,43 +696,151 @@ function refreshUI(text, busy, cls) {
   }
 }
 
+// Швидкий шлях: сторінки з сайту УЗ завантажує сам телефон, бо з українського з'єднання
+// сайт відповідає миттєво, а мережу сервісу він обмежує і збірка розтягується надовго.
+// Бот лише розбирає прислані сторінки і зберігає розклад. Якщо щось пішло не так,
+// лишається давній шлях: бот завантажує все сам (повільно, зате без участі телефона).
+const FAST_DAYS  = 14;    // скільки днів оновлює кнопка
+const FAST_BATCH = 6;     // сторінок в одній посилці; стільки ж качаємо одночасно
+const FAST_TRIES = 3;     // спроб на сторінку
+const FAST_MIN_OK = 0.9;  // менша частка завантажених сторінок: краще давній шлях
+
+function trimHtml(s) {
+  return s.replace(/<script[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[\s\S]*?<\/style>/gi, "")
+          .replace(/<!--[\s\S]*?-->/g, "")
+          .replace(/[ \t]{2,}/g, " ");
+}
+
+// Сторінки стискаються перед відправкою: мобільний інтернет буває повільним на віддачу
+async function gzipBody(text) {
+  if (!window.CompressionStream) return null;
+  try {
+    const packed = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+    return await new Response(packed).blob();
+  } catch (e) { return null; }
+}
+
+async function postJson(path, payload) {
+  const text = JSON.stringify(payload);
+  const packed = text.length > 20000 ? await gzipBody(text) : null;
+  const headers = { "Content-Type": "application/json" };
+  if (packed) headers["X-Gzip"] = "1";
+  const r = await fetch(GATEWAY_URL + path, { method: "POST", headers, body: packed || text });
+  if (!r.ok) throw new Error("HTTP " + r.status + " на " + path);
+  return r.json();
+}
+
+async function fetchUzPage(url) {
+  for (let i = 0; i < FAST_TRIES; i++) {
+    try {
+      const r = await fetch(url, { cache: "no-store" });
+      if (r.ok) {
+        const text = await r.text();
+        if (text.includes("ElTrain")) return trimHtml(text);
+      }
+    } catch (e) { /* мережа смикнулась, спробуємо ще */ }
+    await sleep(400 * (i + 1));
+  }
+  return null;
+}
+
+// Одна фаза: качаємо перелік сторінок партіями і віддаємо їх боту.
+// Відправка попередньої партії йде паралельно із завантаженням наступної.
+async function runFastPhase(session, tasks, progress) {
+  let sending = Promise.resolve(null), answer = null, ok = 0;
+  for (let i = 0; i < tasks.length; i += FAST_BATCH) {
+    const chunk = tasks.slice(i, i + FAST_BATCH);
+    const loaded = await Promise.all(chunk.map(async t => ({ id: t.id, html: await fetchUzPage(t.url) })));
+    const pages = loaded.filter(p => p.html);
+    const failed = loaded.filter(p => !p.html).map(p => p.id);
+    ok += pages.length;
+    progress(ok, tasks.length);
+    await sending;
+    sending = postJson("/fast/pages", { session, pages, failed }).then(r => { answer = r; });
+  }
+  await sending;
+  return { answer, ok, total: tasks.length };
+}
+
+async function fastRefresh() {
+  refreshUI("↻ Готую оновлення... (сервер може прокидатись до хвилини)", true, "");
+  const start = await postJson("/fast/start", { days: FAST_DAYS, initData: tg?.initData || "" });
+  if (start.status === "too_soon") {
+    refreshUI(`Розклад щойно оновлювався. Спробуйте через ${start.wait_seconds} с`, false, "stale");
+    return true;
+  }
+  if (start.status === "running") return waitForBuild();
+  if (!start.session || !start.tasks?.length) return false;   // сервер старої версії
+
+  const show = (done, total) => refreshUI(`↻ Завантажую розклад із сайту УЗ: ${done}/${total}`, true, "");
+  let phase = await runFastPhase(start.session, start.tasks, show);
+  if (phase.ok < phase.total * FAST_MIN_OK) return false;     // сайт віддає погано: давній шлях
+
+  let next = phase.answer?.tasks || [];
+  if (next.length) {
+    refreshUI(`↻ Завантажую зміни руху: 0/${next.length}`, true, "");
+    const trains = await runFastPhase(start.session, next,
+      (done, total) => refreshUI(`↻ Завантажую зміни руху: ${done}/${total}`, true, ""));
+    if (trains.ok < trains.total * FAST_MIN_OK) return false;
+  }
+  refreshUI("↻ Складаю розклад...", true, "");
+  await postJson("/fast/finish", { session: start.session });
+  return waitForBuild();
+}
+
+async function slowRefresh() {
+  refreshUI("↻ Оновлюю найближчі дні (довгий шлях, до кількох хвилин)...", true, "");
+  const started = await fetch(GATEWAY_URL + "/refresh", { method: "POST" }).then(r => r.json());
+  if (started.status === "too_soon") {
+    refreshUI(`Розклад щойно оновлювався. Спробуйте через ${started.wait_seconds} с`, false, "stale");
+    return true;
+  }
+  return waitForBuild(150, 4000);
+}
+
+async function waitForBuild(steps = 40, every = 2000) {
+  await sleep(700);
+  for (let i = 0; i < steps; i++) {
+    let st;
+    try { st = await fetch(GATEWAY_URL + "/status").then(r => r.json()); }
+    catch (e) { await sleep(every); continue; }
+    if (st.running) { await sleep(every); continue; }
+    if (st.ok === false) {
+      refreshUI("Не вдалося оновити: " + (st.message || ""), false, "error");
+      return true;
+    }
+    const fresh = await fetch(GATEWAY_URL + "/schedule.json").then(r => r.json()).catch(() => null);
+    if (fresh?.trains) {
+      S = fresh;
+      lsSet("schedule.v2", S);
+      offline = false;
+      if (S.stations?.length) STATIONS = S.stations;
+      buildSidebar();
+      renderAll();
+    }
+    refreshUI(null, false, null);
+    const status = document.getElementById("status-bar");
+    status.textContent = (st.committed ? "✓ Оновлено з сайту УЗ: " : "✓ Змін немає, перевірено: ")
+      + fmtStamp(st.generated || S?.generated);
+    status.className = "fresh";
+    return true;
+  }
+  refreshUI("Оновлення триває довше, ніж очікувалось. Спробуйте пізніше", false, "stale");
+  return true;
+}
+
 async function forceRefresh() {
   if (!GATEWAY_URL || refreshing) return;
   refreshing = true;
-  refreshUI("↻ Запит на оновлення... (сервер може прокидатись до хвилини)", true, "");
   try {
-    const started = await fetch(GATEWAY_URL + "/refresh", { method: "POST" }).then(r => r.json());
-    if (started.status === "too_soon") {
-      refreshUI(`Розклад щойно оновлювався. Спробуйте через ${started.wait_seconds} с`, false, "stale");
-      refreshing = false;
-      return;
+    let done = false;
+    try {
+      done = await fastRefresh();
+    } catch (e) {
+      console.warn("швидке оновлення:", e.message);
     }
-    refreshUI("↻ Оновлюю найближчі дні з сайту УЗ...", true, "");
-    for (let i = 0; i < 60; i++) {
-      await sleep(3000);
-      let st;
-      try { st = await fetch(GATEWAY_URL + "/status").then(r => r.json()); }
-      catch (e) { continue; }
-      if (st.running) continue;
-      if (st.ok === false) { refreshUI("Не вдалося оновити: " + (st.message || ""), false, "error"); refreshing = false; return; }
-      const fresh = await fetch(GATEWAY_URL + "/schedule.json").then(r => r.json()).catch(() => null);
-      if (fresh?.trains) {
-        S = fresh;
-        lsSet("schedule.v2", S);
-        offline = false;
-        if (S.stations?.length) STATIONS = S.stations;
-        buildSidebar();
-        renderAll();
-      }
-      refreshUI(null, false, null);
-      const status = document.getElementById("status-bar");
-      status.textContent = (st.committed ? "✓ Оновлено з сайту УЗ: " : "✓ Змін немає, перевірено: ")
-        + fmtStamp(st.generated || S?.generated);
-      status.className = "fresh";
-      refreshing = false;
-      return;
-    }
-    refreshUI("Оновлення триває довше, ніж очікувалось. Спробуйте пізніше", false, "stale");
+    if (!done) await slowRefresh();
   } catch (e) {
     refreshUI("Сервіс оновлення недоступний", false, "error");
   }

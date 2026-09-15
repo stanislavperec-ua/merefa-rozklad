@@ -194,6 +194,29 @@ def direct_allowed() -> bool:
     return os.environ.get("UZ_DIRECT", "1").strip() not in ("0", "false", "no")
 
 
+def pair_params(sid1: int, sid2: int, date: str | None = None) -> dict:
+    """Параметри сторінки «прямі поїзди між станціями»: на дату або з термінами дії."""
+    if date:
+        return {"sid1": sid1, "sid2": sid2, "dateR": 1, "eventdate": date}
+    return {"sid1": sid1, "sid2": sid2, "dateR": 0}
+
+
+def train_params(tid: str) -> dict:
+    """Параметри сторінки поїзда: маршрут по зупинках і блок «Зміни руху»."""
+    return {"tid": tid, "dateR": 0}
+
+
+def page_url(params: dict) -> str:
+    """Адреса сторінки на сайті УЗ."""
+    return BASE_URL + "?" + urlencode(params)
+
+
+def via_gateway(url: str, gateway: str | None = None) -> str:
+    """Та сама адреса, але через Cloudflare Worker (єдиний шлях до сайту з хмари і з браузера)."""
+    gw = gateway or (default_gateways() or GATEWAYS)[0]
+    return gw.replace("{url}", quote(url, safe=""))
+
+
 class Client:
     """Завантажує сторінки УЗ напряму або через європейський шлюз.
 
@@ -203,10 +226,12 @@ class Client:
     """
 
     def __init__(self, session: requests.Session | None = None, pause: float = REQUEST_PAUSE,
-                 gateways: list[str] | None = None, direct: bool | None = None):
+                 gateways: list[str] | None = None, direct: bool | None = None,
+                 retries: int = RETRIES):
         self.session = session or requests.Session()
         self.session.headers["User-Agent"] = USER_AGENT
         self.pause = pause
+        self.retries = max(1, retries)
         self.requests_made = 0
         if direct is None:
             direct = direct_allowed()
@@ -222,10 +247,10 @@ class Client:
 
     @staticmethod
     def _url(route: str | None, params: dict) -> str:
-        target = BASE_URL + "?" + urlencode(params)
+        target = page_url(params)
         if route is None:
             return target
-        return route.replace("{url}", quote(target, safe=""))
+        return via_gateway(target, route)
 
     def _pause_for(self, route: str | None) -> float:
         base = self.pause if route is None else max(self.pause, GATEWAY_PAUSE)
@@ -262,7 +287,7 @@ class Client:
         last_err: Exception | None = None
         # спочатку маршрут, який уже спрацював, потім решта
         order = [self.route] + [r for r in self.routes if r != self.route]
-        for attempt in range(1, RETRIES + 1):
+        for attempt in range(1, self.retries + 1):
             for route in order:
                 try:
                     if self.requests_made:
@@ -279,7 +304,7 @@ class Client:
                 except Exception as e:  # noqa: BLE001
                     last_err = e
                     log.warning("UZ %s через %s: спроба %d/%d невдала: %s",
-                                params, route or "напряму", attempt, RETRIES, str(e)[:160])
+                                params, route or "напряму", attempt, self.retries, str(e)[:160])
                     if "зайнятий" in str(e):
                         log.info("Пауза зросла до %.0f с", self.backoff)
             time.sleep(2 * attempt)
@@ -287,15 +312,10 @@ class Client:
 
 
     def pair_list(self, sid1: int, sid2: int, date: str | None = None) -> list[TrainRow]:
-        if date:
-            html = self.get(sid1=sid1, sid2=sid2, dateR=1, eventdate=date)
-        else:
-            html = self.get(sid1=sid1, sid2=sid2, dateR=0)
-        return parse_pair_list(html)
+        return parse_pair_list(self.get(**pair_params(sid1, sid2, date)))
 
     def train_page(self, tid: str) -> TrainPage:
-        html = self.get(tid=tid, dateR=0)
-        return parse_train_page(html, tid)
+        return parse_train_page(self.get(**train_params(tid)), tid)
 
 
 # ──────────────────────────────────────────────────────────────────────

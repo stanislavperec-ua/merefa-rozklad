@@ -8,9 +8,16 @@
 Маршрути:
     GET  /whoami           діагностика: мережа сервісу і чи бачить він сайт УЗ
     GET  /fetch?url=...    проксі однієї сторінки УЗ (запасний шлях для GitHub Actions)
-    POST /refresh          зібрати розклад і закомітити в GitHub (кнопка в Mini App)
+    POST /refresh          зібрати розклад самотужки і закомітити в GitHub (повільний шлях)
+    POST /fast/start       швидкий шлях: видати телефону перелік сторінок для завантаження
+    POST /fast/pages       прийняти завантажені телефоном сторінки і розібрати їх
+    POST /fast/finish      зібрати розклад із прийнятих сторінок і закомітити
     GET  /status           стан останньої збірки
     GET  /schedule.json    свіжозібраний розклад з пам'яті, без очікування GitHub Pages
+
+Швидкий шлях існує тому, що сайт УЗ обмежує частоту запитів за адресою відправника:
+з мережі Render серія запитів отримує 522 і збірка триває більше десяти хвилин, а з
+телефона користувача ті самі сторінки віддаються за частки секунди (див. fastbuild.py).
 
 Змінні оточення:
     GH_TOKEN      токен GitHub з правом Contents: Read and write (інакше збірка не комітиться)
@@ -21,9 +28,11 @@
 from __future__ import annotations
 
 import base64
+import gzip
 import json
 import logging
 import os
+import random
 import threading
 import time
 from datetime import datetime, timedelta
@@ -33,6 +42,7 @@ from urllib.parse import quote
 from flask import Blueprint, Flask, Response, abort, jsonify, request
 
 import build_schedule
+import fastbuild
 import uz
 
 log = logging.getLogger("gateway")
@@ -46,9 +56,12 @@ GATEWAY_TOKEN = os.environ.get("GATEWAY_TOKEN", "")
 GH_TOKEN = os.environ.get("GH_TOKEN", "")
 GH_REPO = os.environ.get("GH_REPO", "stanislavperec-ua/merefa-rozklad")
 GH_API = "https://api.github.com"
-HORIZON = int(os.environ.get("HORIZON_DAYS", "4"))   # кнопка оновлює найближчі дні;
-# повні 14 днів збирає GitHub Actions за розкладом, тут важлива швидкість відповіді
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")          # ним перевіряється підпис Telegram
+HORIZON = int(os.environ.get("HORIZON_DAYS", "4"))   # повільний шлях бере найближчі дні:
+# сайт УЗ з мережі Render відповідає неохоче, тому там важлива швидкість відповіді
+FAST_HORIZON = int(os.environ.get("FAST_HORIZON_DAYS", "14"))  # швидкий шлях устигає за всі
 MIN_INTERVAL = timedelta(minutes=int(os.environ.get("MIN_REFRESH_MINUTES", "5")))
+MAX_BODY = 12 * 1024 * 1024                          # більше сторінки розкладу не важать
 TIMEOUT = (15, 60)
 USER_AGENT = uz.USER_AGENT
 
@@ -68,14 +81,36 @@ state: dict = {
 }
 state_lock = threading.RLock()   # реентерабельний: public_state() викликається і зсередини блоків
 latest_schedule: dict | None = None
+fast_sessions = fastbuild.SessionStore()
 
 
 def cors(resp: Response) -> Response:
     """Mini App відкривається з GitHub Pages, а в Telegram WebView origin буває null."""
     resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Gzip"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     return resp
+
+
+def body_json() -> dict:
+    """Тіло запиту, за потреби розпаковане: телефон стискає сторінки, щоб не гнати зайве."""
+    if request.content_length and request.content_length > MAX_BODY:
+        abort(413)
+    raw = request.get_data(cache=False)
+    if request.headers.get("X-Gzip") == "1":
+        try:
+            raw = gzip.decompress(raw)
+        except (OSError, EOFError) as e:
+            raise fastbuild.FastError(f"не вдалося розпакувати тіло запиту: {e}") from e
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as e:
+        raise fastbuild.FastError(f"тіло запиту не є JSON: {e}") from e
+    if not isinstance(data, dict):
+        raise fastbuild.FastError("очікую об'єкт JSON")
+    return data
 
 
 @gateway_bp.route("/whoami")
@@ -145,9 +180,11 @@ def fetch():
 # GitHub
 # ──────────────────────────────────────────────────────────────────────
 def gh_headers() -> dict:
-    return {"Authorization": f"Bearer {GH_TOKEN}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28"}
+    """Без токена читання публічного репозиторію теж працює, тому заголовок лише за наявності."""
+    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    if GH_TOKEN:
+        headers["Authorization"] = f"Bearer {GH_TOKEN}"
+    return headers
 
 
 def gh_get_file(path: str) -> tuple[dict | None, str | None]:
@@ -178,58 +215,77 @@ def strip_volatile(schedule: dict) -> str:
     return json.dumps(copy, ensure_ascii=False, sort_keys=True)
 
 
+def load_cache() -> tuple[dict, str | None]:
+    """Кеш сторінок поїздів із GitHub; без нього збірка теж працює, лише довша."""
+    try:
+        cache, sha = gh_get_file("trains_cache.json")
+        return cache or {}, sha
+    except Exception as e:  # noqa: BLE001
+        log.warning("Кеш поїздів недоступний, збираю без нього: %s", e)
+        return {}, None
+
+
+def fetch_schedule() -> tuple[dict | None, str | None]:
+    """Розклад, що зараз лежить у репозиторії (для злиття і для звірки)."""
+    try:
+        return gh_get_file("schedule.json")
+    except Exception as e:  # noqa: BLE001
+        log.warning("Попередній розклад недоступний: %s", e)
+        return None, None
+
+
+def store_schedule(schedule: dict, cache: dict, cache_sha: str | None,
+                   commit: bool = True, previous: tuple | None = None) -> tuple[dict, bool, str]:
+    """Зливає з попереднім розкладом, кладе в пам'ять і, якщо дозволено, комітить у GitHub."""
+    global latest_schedule
+    old, sha = previous if previous is not None else (None, None)
+    if previous is None and GH_TOKEN:
+        old, sha = gh_get_file("schedule.json")
+    schedule = build_schedule.merge_schedule(old, schedule)
+    latest_schedule = schedule
+
+    if not GH_TOKEN:
+        return schedule, False, "розклад зібрано (GH_TOKEN не задано, у GitHub не збережено)"
+    if not commit:
+        return schedule, False, "розклад зібрано, але не збережено в GitHub"
+    if old is not None and strip_volatile(old) == strip_volatile(schedule):
+        return schedule, False, "розклад не змінився"
+
+    stamp = datetime.now(KYIV).strftime("%Y-%m-%d %H:%M")
+    gh_put_file("schedule.json", schedule, sha, f"Timetable update (gateway) {stamp}")
+    if cache:
+        try:
+            _, cache_sha_now = gh_get_file("trains_cache.json")
+            gh_put_file("trains_cache.json", cache, cache_sha_now or cache_sha,
+                        f"Trains cache (gateway) {stamp}")
+        except Exception as e:  # noqa: BLE001
+            log.warning("Кеш не збережено: %s", e)
+    return schedule, True, "розклад оновлено і збережено в GitHub"
+
+
+def finish_state(ok: bool, message: str, schedule: dict | None = None, committed: bool = False) -> None:
+    with state_lock:
+        state.update(running=False, finished=datetime.now(KYIV).isoformat(timespec="seconds"),
+                     ok=ok, message=message, committed=committed,
+                     generated=(schedule or {}).get("generated") or state.get("generated"),
+                     requests=(schedule or {}).get("stats", {}).get("requests", 0))
+
+
 def do_refresh() -> None:
     """Збирає розклад і зберігає його в GitHub. Прапорець running уже виставлено у refresh()."""
-    global latest_schedule
     try:
-        cache, cache_sha = ({}, None)
-        try:
-            cache, cache_sha = gh_get_file("trains_cache.json")
-            cache = cache or {}
-        except Exception as e:  # noqa: BLE001
-            log.warning("Кеш поїздів недоступний, збираю без нього: %s", e)
-
+        cache, cache_sha = load_cache()
         # Сервіс працює в хмарі, де прямий маршрут завжди впирається в таймаут 15 с
         # на кожному запиті, тому лишаємо тільки Cloudflare Worker.
         client = uz.Client(direct=False)
         horizon = state.get("horizon") or HORIZON
         schedule = build_schedule.build(client, datetime.now(KYIV).date(), horizon, cache, False)
-
-        old, sha = (None, None)
-        if GH_TOKEN:
-            old, sha = gh_get_file("schedule.json")
-        schedule = build_schedule.merge_schedule(old, schedule)
-        latest_schedule = schedule
-
-        committed = False
-        if GH_TOKEN:
-            if old is None or strip_volatile(old) != strip_volatile(schedule):
-                stamp = datetime.now(KYIV).strftime("%Y-%m-%d %H:%M")
-                gh_put_file("schedule.json", schedule, sha, f"Timetable update (gateway) {stamp}")
-                if cache:
-                    try:
-                        _, cache_sha_now = gh_get_file("trains_cache.json")
-                        gh_put_file("trains_cache.json", cache, cache_sha_now or cache_sha,
-                                    f"Trains cache (gateway) {stamp}")
-                    except Exception as e:  # noqa: BLE001
-                        log.warning("Кеш не збережено: %s", e)
-                committed = True
-                msg = "розклад оновлено і збережено в GitHub"
-            else:
-                msg = "розклад не змінився"
-        else:
-            msg = "розклад зібрано (GH_TOKEN не задано, у GitHub не збережено)"
-
-        with state_lock:
-            state.update(running=False, finished=datetime.now(KYIV).isoformat(timespec="seconds"),
-                         ok=True, message=msg, generated=schedule.get("generated"),
-                         committed=committed, requests=schedule.get("stats", {}).get("requests", 0))
+        schedule, committed, msg = store_schedule(schedule, cache, cache_sha)
+        finish_state(True, msg, schedule, committed)
         log.info("Оновлення завершено: %s", msg)
     except Exception as e:  # noqa: BLE001
         log.exception("Збірка не вдалася")
-        with state_lock:
-            state.update(running=False, finished=datetime.now(KYIV).isoformat(timespec="seconds"),
-                         ok=False, message=f"помилка: {str(e)[:200]}")
+        finish_state(False, f"помилка: {str(e)[:200]}")
 
 
 @gateway_bp.route("/refresh", methods=["POST", "GET", "OPTIONS"])
@@ -269,6 +325,175 @@ def public_state() -> dict:
 @gateway_bp.route("/status")
 def status():
     return cors(jsonify(**public_state()))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Швидкий шлях: сторінки завантажує телефон користувача
+# ──────────────────────────────────────────────────────────────────────
+def fail(message: str, code: int = 400, **extra) -> Response:
+    resp = jsonify(error=message, **extra)
+    resp.status_code = code
+    return cors(resp)
+
+
+@gateway_bp.errorhandler(fastbuild.FastError)
+def on_fast_error(e: fastbuild.FastError):
+    return fail(str(e), 400)
+
+
+def seconds_to_wait() -> int:
+    """Скільки лишилось до наступного дозволеного оновлення (0, якщо вже можна)."""
+    last = state.get("finished")
+    if not last:
+        return 0
+    try:
+        since = datetime.now(KYIV) - datetime.fromisoformat(last)
+    except ValueError:
+        return 0
+    return max(0, int((MIN_INTERVAL - since).total_seconds()))
+
+
+def spot_check(schedule: dict) -> tuple[bool | None, str]:
+    """Вибіркова звірка присланих даних: сервіс сам тягне одну дату з сайту УЗ.
+
+    Потрібна лише клієнту без підпису Telegram (звичайний браузер), бо сторінки міг би
+    прислати будь-хто, хто знає адресу сервісу. Сайт із мережі Render відповідає не
+    завжди, тож невдала звірка не означає підробку: тоді розклад показуємо користувачеві,
+    але у GitHub не зберігаємо.
+    """
+    days = sorted(schedule.get("days") or {})
+    if not days:
+        return None, "немає жодної зібраної дати"
+    day = random.choice(days)
+    try:
+        rows = uz.Client(direct=False, retries=2).pair_list(uz.KHARKIV_SID, uz.MEREFA_SID, day)
+    except uz.UZError as e:
+        return None, f"сайт УЗ не відповів сервісу ({str(e)[:100]})"
+    theirs = {r.tid for r in rows}
+    if not theirs:
+        return None, f"{day}: сайт віддав порожній перелік"
+    missing = theirs - fastbuild.day_tids(schedule, day)
+    if missing:
+        return False, f"{day}: серед присланих даних немає поїздів {sorted(missing)[:5]}"
+    return True, f"{day}: збіглося, {len(theirs)} поїздів"
+
+
+def sanity_check(old: dict | None, fresh: dict) -> tuple[bool, str]:
+    """Груба перевірка правдоподібності, коли звірка з сайтом не вдалася.
+
+    Розклад не може раптово втратити більшість поїздів: якщо втратив, це або підробка,
+    або зіпсовані дані, і зберігати таке в GitHub не варто.
+    """
+    if not old or not old.get("trains"):
+        return True, "порівнювати нема з чим"
+    was, now = len(old["trains"]), len(fresh.get("trains") or {})
+    if now < was * 0.7:
+        return False, f"поїздів стало {now} замість {was}"
+    for day, info in (fresh.get("days") or {}).items():
+        before = (old.get("days") or {}).get(day)
+        if not before:
+            continue
+        if len(info.get("running") or []) < len(before.get("running") or []) * 0.7:
+            return False, f"{day}: курсує {len(info.get('running') or [])} замість {len(before['running'])}"
+    return True, "зміни в межах звичайного"
+
+
+@gateway_bp.route("/fast/start", methods=["POST", "OPTIONS"])
+def fast_start():
+    if request.method == "OPTIONS":
+        return cors(Response("", 204))
+    data = body_json()
+    with state_lock:
+        if state["running"]:
+            return cors(jsonify(status="running", **public_state()))
+    wait = 0 if data.get("force") else seconds_to_wait()
+    if wait:
+        return cors(jsonify(status="too_soon", wait_seconds=wait, **public_state()))
+    try:
+        days = int(data.get("days") or FAST_HORIZON)
+    except (TypeError, ValueError):
+        days = FAST_HORIZON
+    trusted = bool(fastbuild.check_init_data(str(data.get("initData") or ""), BOT_TOKEN))
+    cache, cache_sha = load_cache()
+    now = datetime.now(KYIV)
+    session = fastbuild.Session(today=now.date(), horizon=days, cache=cache,
+                                trusted=trusted, now=now)
+    session.cache_sha = cache_sha
+    fast_sessions.add(session)
+    log.info("Швидке оновлення %s: %d днів, %d сторінок, підпис Telegram: %s",
+             session.id, session.horizon, len(session.tasks), "є" if trusted else "немає")
+    return cors(jsonify(status="started", trusted=trusted, horizon=session.horizon,
+                        **session.state()))
+
+
+@gateway_bp.route("/fast/pages", methods=["POST", "OPTIONS"])
+def fast_pages():
+    if request.method == "OPTIONS":
+        return cors(Response("", 204))
+    data = body_json()
+    session = fast_sessions.get(str(data.get("session") or ""))
+    pages = data.get("pages") or []
+    if not isinstance(pages, list) or len(pages) > fastbuild.MAX_PAGES_PER_BATCH:
+        return fail(f"за раз приймаю не більше {fastbuild.MAX_PAGES_PER_BATCH} сторінок")
+    rejected = []
+    for page in pages:
+        page_id = str((page or {}).get("id", ""))
+        try:
+            session.submit(page_id, (page or {}).get("html"))
+        except (fastbuild.FastError, uz.UZError, ValueError, TypeError) as e:
+            log.warning("Сесія %s: сторінку %s відхилено: %s", session.id, page_id, str(e)[:160])
+            rejected.append({"id": page_id, "error": str(e)[:160]})
+    lost = [str(i) for i in (data.get("failed") or []) if isinstance(i, str)]
+    if lost:
+        session.give_up(lost)
+    session.advance()
+    return cors(jsonify(status="ok", rejected=rejected, **session.state()))
+
+
+def do_fast_finish(session: fastbuild.Session) -> None:
+    """Збирає розклад із уже розібраних сторінок. Прапорець running виставлено у fast_finish()."""
+    try:
+        schedule = session.build()
+        previous = fetch_schedule() if GH_TOKEN else (None, None)
+        commit, note = True, ""
+        if not session.trusted:
+            verdict, why = spot_check(schedule)
+            if verdict is False:
+                raise fastbuild.FastError(f"дані не збіглися з сайтом УЗ ({why})")
+            if verdict is None:
+                # сайт не відповів сервісу: лишається перевірити дані на правдоподібність
+                commit, reason = sanity_check(previous[0], schedule)
+                note = f"; звірка з сайтом не вийшла ({why}), перевірка даних: {reason}"
+                log.warning("Сесія %s: звірка неможлива (%s), правдоподібність: %s", session.id, why, reason)
+            else:
+                log.info("Сесія %s: контрольна звірка пройдена, %s", session.id, why)
+        schedule, committed, msg = store_schedule(schedule, session.cache,
+                                                  getattr(session, "cache_sha", None), commit, previous)
+        finish_state(True, msg + note, schedule, committed)
+        log.info("Швидке оновлення %s завершено: %s", session.id, msg)
+    except Exception as e:  # noqa: BLE001
+        log.exception("Швидка збірка не вдалася")
+        finish_state(False, f"помилка: {str(e)[:200]}")
+    finally:
+        fast_sessions.drop(session.id)
+
+
+@gateway_bp.route("/fast/finish", methods=["POST", "OPTIONS"])
+def fast_finish():
+    if request.method == "OPTIONS":
+        return cors(Response("", 204))
+    data = body_json()
+    session = fast_sessions.get(str(data.get("session") or ""))
+    with state_lock:
+        if state["running"]:
+            return cors(jsonify(status="running", **public_state()))
+        state.update(running=True, started=datetime.now(KYIV).isoformat(timespec="seconds"),
+                     finished=None, ok=None, horizon=session.horizon,
+                     message=f"збираю розклад зі сторінок, завантажених телефоном "
+                             f"({session.done} стор., {session.horizon} дн.)")
+        payload = public_state()
+    threading.Thread(target=do_fast_finish, args=(session,), daemon=True).start()
+    return cors(jsonify(status="started", **payload))
 
 
 @gateway_bp.route("/schedule.json")
