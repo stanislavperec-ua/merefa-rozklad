@@ -65,13 +65,17 @@ class FastApiTests(unittest.TestCase):
         gateway.state.update(running=False, started=None, finished=None, ok=None,
                              message="тест", generated=None, committed=False, requests=0)
         # у мережу тести не ходять: звірка з сайтом і GitHub підмінені
-        self._saved = (gateway.spot_check, gateway.gh_get_file, gateway.gh_put_file)
+        self._saved = (gateway.spot_check, gateway.start_spot_check,
+                       gateway.gh_get_file, gateway.gh_put_file)
+        self.real_spot_check = gateway.spot_check
         gateway.spot_check = self.fake_spot_check
+        gateway.start_spot_check = lambda session: None
         gateway.gh_get_file = lambda path: (None, None)
         gateway.gh_put_file = lambda *a, **kw: None
 
     def tearDown(self):
-        gateway.spot_check, gateway.gh_get_file, gateway.gh_put_file = self._saved
+        (gateway.spot_check, gateway.start_spot_check,
+         gateway.gh_get_file, gateway.gh_put_file) = self._saved
 
     def fake_spot_check(self, *args, **kwargs):
         """Підміна звірки з сайтом УЗ: у тестах у мережу не ходимо."""
@@ -194,6 +198,24 @@ class FastApiTests(unittest.TestCase):
             self.assertIn("перевірка даних", st["message"])
         finally:
             gateway.GH_TOKEN = ""
+
+    def test_spot_check_compares_with_what_service_sees(self):
+        session = fastbuild.Session(today=gateway.datetime.now(gateway.KYIV).date(), horizon=1)
+        day = list(session.state()["tasks"])[2]["id"].split(":")[-1]
+        schedule = {"days": {day: {"running": ["1", "2", "3"]}}}
+        session.check_ready.set()
+
+        session.check = (day, {"1", "2"}, None)
+        self.assertTrue(self.real_spot_check(session, schedule)[0], "усі поїзди сайту є в даних")
+
+        session.check = (day, {"1", "9"}, None)
+        self.assertFalse(self.real_spot_check(session, schedule)[0], "поїзда 9 бракує: підозріло")
+
+        session.check = (day, None, "сайт УЗ зайнятий (HTTP 522)")
+        self.assertIsNone(self.real_spot_check(session, schedule)[0], "збій мережі не є доказом підробки")
+
+        session.check = ("1999-01-01", {"1"}, None)
+        self.assertIsNone(self.real_spot_check(session, schedule)[0], "дати немає в розкладі")
 
     def test_sanity_check(self):
         old = {"trains": {str(i): {} for i in range(29)},

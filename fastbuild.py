@@ -174,6 +174,10 @@ class Session:
         self.created = time.time()
         self.touched = self.created
         self.client = OfflineClient()
+        # результат контрольної звірки, яку сервіс робить сам, поки телефон качає сторінки:
+        # (дата, перелік tid або None, текст помилки або None)
+        self.check: tuple[str, set[str] | None, str | None] | None = None
+        self.check_ready = threading.Event()
         self.phase: int | str = PHASE_LISTS
         self.tasks: list[dict] = list_tasks(self.today, self.horizon, gateway)
         self.pending: set[str] = {t["id"] for t in self.tasks}

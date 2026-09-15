@@ -353,25 +353,47 @@ def seconds_to_wait() -> int:
     return max(0, int((MIN_INTERVAL - since).total_seconds()))
 
 
-def spot_check(schedule: dict) -> tuple[bool | None, str]:
-    """Вибіркова звірка присланих даних: сервіс сам тягне одну дату з сайту УЗ.
+SPOT_WAIT = 25          # скільки чекати на власну звірку, якщо вона ще не встигла
 
-    Потрібна лише клієнту без підпису Telegram (звичайний браузер), бо сторінки міг би
-    прислати будь-хто, хто знає адресу сервісу. Сайт із мережі Render відповідає не
-    завжди, тож невдала звірка не означає підробку: тоді розклад показуємо користувачеві,
-    але у GitHub не зберігаємо.
+
+def start_spot_check(session: fastbuild.Session) -> None:
+    """Тягне одну дату з сайту УЗ, поки телефон завантажує сторінки.
+
+    Потрібно клієнту без підпису Telegram (звичайний браузер): сторінки міг би прислати
+    будь-хто, хто знає адресу сервісу, тому результат треба звірити з джерелом. Запит
+    іде одразу після /fast/start, щоб до кінця збірки відповідь уже була.
     """
-    days = sorted(schedule.get("days") or {})
-    if not days:
-        return None, "немає жодної зібраної дати"
-    day = random.choice(days)
-    try:
-        rows = uz.Client(direct=False, retries=2).pair_list(uz.KHARKIV_SID, uz.MEREFA_SID, day)
-    except uz.UZError as e:
-        return None, f"сайт УЗ не відповів сервісу ({str(e)[:100]})"
-    theirs = {r.tid for r in rows}
+    days = fastbuild.horizon_dates(session.today, session.horizon)
+    day = random.choice(days[:7])       # найближчий тиждень: саме він цікавить користувача
+
+    def work() -> None:
+        try:
+            rows = uz.Client(direct=False, retries=2).pair_list(uz.KHARKIV_SID, uz.MEREFA_SID, day)
+            session.check = (day, {r.tid for r in rows}, None)
+        except Exception as e:  # noqa: BLE001
+            session.check = (day, None, str(e)[:120])
+        finally:
+            session.check_ready.set()
+
+    threading.Thread(target=work, daemon=True).start()
+
+
+def spot_check(session: fastbuild.Session, schedule: dict) -> tuple[bool | None, str]:
+    """Звіряє зібраний розклад із тим, що сервіс бачить на сайті сам.
+
+    Сайт із мережі Render відповідає не завжди, тож невдала звірка не означає підробку:
+    у такому разі рішення ухвалює sanity_check.
+    """
+    session.check_ready.wait(SPOT_WAIT)
+    if not session.check:
+        return None, "звірка не встигла"
+    day, theirs, error = session.check
+    if error:
+        return None, f"сайт УЗ не відповів сервісу ({error})"
     if not theirs:
         return None, f"{day}: сайт віддав порожній перелік"
+    if day not in (schedule.get("days") or {}):
+        return None, f"{day}: цієї дати немає в зібраному розкладі"
     missing = theirs - fastbuild.day_tids(schedule, day)
     if missing:
         return False, f"{day}: серед присланих даних немає поїздів {sorted(missing)[:5]}"
@@ -420,6 +442,8 @@ def fast_start():
                                 trusted=trusted, now=now)
     session.cache_sha = cache_sha
     fast_sessions.add(session)
+    if not trusted:
+        start_spot_check(session)      # звірка йде паралельно, щоб не чекати на неї в кінці
     log.info("Швидке оновлення %s: %d днів, %d сторінок, підпис Telegram: %s",
              session.id, session.horizon, len(session.tasks), "є" if trusted else "немає")
     return cors(jsonify(status="started", trusted=trusted, horizon=session.horizon,
@@ -457,7 +481,7 @@ def do_fast_finish(session: fastbuild.Session) -> None:
         previous = fetch_schedule() if GH_TOKEN else (None, None)
         commit, note = True, ""
         if not session.trusted:
-            verdict, why = spot_check(schedule)
+            verdict, why = spot_check(session, schedule)
             if verdict is False:
                 raise fastbuild.FastError(f"дані не збіглися з сайтом УЗ ({why})")
             if verdict is None:
