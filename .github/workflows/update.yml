@@ -53,14 +53,17 @@ jobs:
       - name: Unit tests
         run: python -m unittest discover -s tests
 
-      # Збірку виконує бот на Render: з його регіону Cloudflare Worker потрапляє в дата-центр,
-      # який сайт УЗ пускає, тоді як із раннера GitHub (Лос-Анджелес / Вашингтон) приходить 522.
-      - name: Official timetable (via bot on Render)
+      # Сторінки з сайту УЗ качає Cloudflare Worker: сайт відкидає і раннер GitHub, і мережу
+      # Render, а мережу Cloudflare пускає. Воркер робить це і сам за Cron Trigger; цей крок
+      # лише підстраховує, тому спершу питає, чи слот уже відпрацьовано.
+      - name: Official timetable (via Cloudflare Worker)
         id: timetable
         continue-on-error: true
         env:
           FORCE: ${{ inputs.force }}
           BOT: https://merefa-rozklad.onrender.com
+          WORKER: https://merefa-uz-gateway.stanislav-perec.workers.dev
+          FAST_TOKEN: ${{ secrets.FAST_TOKEN }}
         run: |
           if [ "$FORCE" != "true" ] && ! python build_schedule.py --slots "$SLOTS" --check-only; then
             echo "Слот ще не настав, розклад не чіпаємо"
@@ -68,9 +71,12 @@ jobs:
           fi
           echo "Буджу бота"
           curl -s -m 120 -o /dev/null "$BOT/" || true
-          curl -s -m 120 -X POST "$BOT/refresh?force=1&days=14" | head -c 200; echo
-          for i in $(seq 1 50); do
-            sleep 30
+          echo "Запускаю збірку через воркер"
+          RESULT=$(curl -s -m 600 -X POST "$WORKER/run?force=1" -H "X-Fast-Token: $FAST_TOKEN")
+          echo "$RESULT" | head -c 500; echo
+          echo "$RESULT" | python -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('ok') else 1)" || exit 1
+          for i in $(seq 1 20); do
+            sleep 15
             BODY=$(curl -s -m 30 "$BOT/status")
             echo "$BODY" | python -c "import sys,json; d=json.load(sys.stdin); print('  running',d['running'],'| ok',d['ok'],'|',(d['message'] or '')[:70])" || continue
             if echo "$BODY" | python -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if (not d['running'] and d['ok'] is not None) else 1)"; then
@@ -78,7 +84,7 @@ jobs:
               exit $?
             fi
           done
-          echo "Бот не впорався за 25 хвилин"; exit 1
+          echo "Збірка не завершилась за 5 хвилин"; exit 1
 
       - name: Live channel messages (t.me/UZprymisky)
         run: python build_live.py
