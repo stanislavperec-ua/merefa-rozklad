@@ -119,7 +119,10 @@ def whoami():
 
     Сайт відповідає лише європейським мережам, тому сервіс має стояти в регіоні Frankfurt.
     """
-    info: dict = {"region_env": os.environ.get("RENDER_REGION", "невідомо")}
+    info: dict = {"region_env": os.environ.get("RENDER_REGION", "невідомо"),
+                  "telegram_check": bool(BOT_TOKEN),   # чи зможемо перевірити підпис Mini App
+                  "github_token": bool(GH_TOKEN),
+                  "fast_sessions": len(fast_sessions)}
     try:
         r = requests.get("https://ipinfo.io/json", timeout=(10, 20))
         data = r.json()
