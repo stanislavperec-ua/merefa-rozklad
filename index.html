@@ -920,7 +920,15 @@ function diffFromToday(key) {
 // у 7001 висіло «з 07 по 16 вересня ВІДМІНЕНО» там, де поїзд якраз починає курсувати.
 function noteFor(train, key) {
   const note = (train.notes || []).find(n => !n.to || n.to >= key);
-  return note ? note.text : "";
+  if (note) return note.text;
+  // Той самий номер може мати кілька tid (старий і новий), а повідомлення УЗ висить на
+  // одному з них: у 6525 пояснення «змінює графік руху» лежить на записі, що вже закінчився
+  for (const other of Object.values(S?.trains || {})) {
+    if (other.num !== train.num) continue;
+    const alt = (other.notes || []).find(n => !n.to || n.to >= key);
+    if (alt) return alt.text;
+  }
+  return "";
 }
 
 // ── Sidebar ──────────────────────────────────────────────
