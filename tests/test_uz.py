@@ -260,6 +260,8 @@ class GatewayTests(unittest.TestCase):
         calls = []
 
         class FakeResp:
+            status_code = 200
+
             def __init__(self, text): self.text, self.encoding = text, "utf-8"
             def raise_for_status(self): pass
 
@@ -279,8 +281,39 @@ class GatewayTests(unittest.TestCase):
         c.get(sid1=2538, sid2=2528, dateR=0)
         self.assertTrue(calls[0].startswith("https://gw/?url="), calls)
 
+    def test_site_busy_is_retried_not_treated_as_broken(self):
+        """522 від Cloudflare означає «сайт УЗ зайнятий»: чекаємо і повторюємо."""
+        page = read("pair_kh_mer_all.html")
+        responses = [(522, ""), (522, ""), (200, page)]
+
+        class FakeResp:
+            def __init__(self, code, text):
+                self.status_code, self.text, self.encoding = code, text, "utf-8"
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise requests.HTTPError(f"HTTP {self.status_code}")
+
+        class FakeSession:
+            headers: dict = {}
+
+            def get(self, url, timeout=None):
+                return FakeResp(*responses.pop(0))
+
+        old_pause = uz.BUSY_PAUSE
+        uz.BUSY_PAUSE = 0.01
+        try:
+            c = uz.Client(session=FakeSession(), pause=0, gateways=["https://gw/?url={url}"], direct=False)
+            rows = uz.parse_pair_list(c.get(sid1=2528, sid2=2538, dateR=0))
+        finally:
+            uz.BUSY_PAUSE = old_pause
+        self.assertEqual(len(rows), 14)
+        self.assertEqual(c.busy_hits, 2)
+
     def test_gateway_error_page_is_rejected(self):
         class FakeResp:
+            status_code = 200
+
             def __init__(self, text): self.text, self.encoding = text, "utf-8"
             def raise_for_status(self): pass
 

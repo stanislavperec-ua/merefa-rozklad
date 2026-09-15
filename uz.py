@@ -97,6 +97,10 @@ GATEWAYS = [
     "https://api.codetabs.com/v1/proxy?quest={url}",
 ]
 GATEWAY_MARKER = "ElTrain"   # ознака справжньої сторінки: шлюз міг повернути свою помилку
+# 520-524 від Cloudflare означають, що сайт УЗ не відповів шлюзу. Це не поломка, а захист
+# сайту від частих запитів, тому після такої відповіді чекаємо помітно довше.
+BUSY_STATUSES = {520, 521, 522, 523, 524, 429, 503}
+BUSY_PAUSE = 12.0
 
 # Станції в порядку від Харкова. sid: код станції на swrailway.gov.ua.
 STATIONS = [
@@ -209,6 +213,7 @@ class Client:
             raise UZError("не задано жодного маршруту до сайту УЗ")
         self.route: str | None = self.routes[0]
         self.route_log: list[str] = []
+        self.busy_hits = 0          # скільки разів сайт відповів «зайнято»
 
     @staticmethod
     def _url(route: str | None, params: dict) -> str:
@@ -223,6 +228,9 @@ class Client:
     def _fetch(self, route: str | None, params: dict) -> str:
         r = self.session.get(self._url(route, params), timeout=(CONNECT_TIMEOUT, REQUEST_TIMEOUT))
         self.requests_made += 1
+        if r.status_code in BUSY_STATUSES:
+            self.busy_hits += 1
+            raise UZError(f"сайт УЗ зайнятий (HTTP {r.status_code})")
         r.raise_for_status()
         r.encoding = "utf-8"
         text = r.text
@@ -252,6 +260,8 @@ class Client:
                     last_err = e
                     log.warning("UZ %s через %s: спроба %d/%d невдала: %s",
                                 params, route or "напряму", attempt, RETRIES, str(e)[:160])
+                    if "зайнятий" in str(e):
+                        time.sleep(BUSY_PAUSE)
             time.sleep(2 * attempt)
         raise UZError(f"не вдалося завантажити {params}: {last_err}")
 

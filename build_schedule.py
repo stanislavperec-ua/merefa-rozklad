@@ -228,6 +228,7 @@ def build(client: uz.Client, today: date, horizon: int, cache: dict, refresh_cac
         "stats": {
             "requests": client.requests_made,
             "skipped_days": len(skipped),
+            "busy_hits": getattr(client, "busy_hits", 0),
             "trains": len(public_trains),
             "route": getattr(client, "route", None) or "напряму",
             "errors": errors,
