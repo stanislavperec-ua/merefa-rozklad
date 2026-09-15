@@ -1,6 +1,6 @@
 {
  "version": 2,
- "generated": "2026-09-15T08:33:44+03:00",
+ "generated": "2026-09-15T08:39:32+03:00",
  "source": "https://swrailway.gov.ua/timetable/eltrain/",
  "horizon": {
   "from": "2026-09-15",
@@ -2214,10 +2214,10 @@
   }
  },
  "stats": {
-  "requests": 34,
+  "requests": 68,
   "skipped_days": 0,
   "trains": 29,
-  "route": "напряму",
+  "route": "https://merefa-uz-gateway.stanislav-perec.workers.dev/fetch?url={url}",
   "errors": []
  }
 }
