@@ -45,7 +45,8 @@ GATEWAY_TOKEN = os.environ.get("GATEWAY_TOKEN", "")
 GH_TOKEN = os.environ.get("GH_TOKEN", "")
 GH_REPO = os.environ.get("GH_REPO", "stanislavperec-ua/merefa-rozklad")
 GH_API = "https://api.github.com"
-HORIZON = int(os.environ.get("HORIZON_DAYS", "14"))
+HORIZON = int(os.environ.get("HORIZON_DAYS", "4"))   # кнопка оновлює найближчі дні;
+# повні 14 днів збирає GitHub Actions за розкладом, тут важлива швидкість відповіді
 MIN_INTERVAL = timedelta(minutes=int(os.environ.get("MIN_REFRESH_MINUTES", "5")))
 TIMEOUT = (15, 60)
 USER_AGENT = uz.USER_AGENT
@@ -160,6 +161,25 @@ def strip_volatile(schedule: dict) -> str:
     return json.dumps(copy, ensure_ascii=False, sort_keys=True)
 
 
+def merge_schedule(old: dict | None, fresh: dict) -> dict:
+    """Кнопка збирає лише найближчі дні, тому решту днів беремо з попереднього розкладу.
+
+    Повні 14 днів збирає GitHub Actions; тут важливо не загубити вже відомі дати.
+    """
+    if not old or not old.get("days"):
+        return fresh
+    merged = dict(fresh)
+    merged["trains"] = {**old.get("trains", {}), **fresh.get("trains", {})}
+    merged["days"] = {**old.get("days", {}), **fresh.get("days", {})}
+    for ds in fresh.get("skipped_days", []):
+        merged["days"].pop(ds, None)          # дата не зібралась: краще без неї, ніж зі старою
+    horizon_to = max(old.get("horizon", {}).get("to", ""), fresh["horizon"]["to"])
+    merged["horizon"] = {"from": fresh["horizon"]["from"], "to": horizon_to}
+    merged["days"] = {k: v for k, v in sorted(merged["days"].items())
+                      if k >= fresh["horizon"]["from"]}
+    return merged
+
+
 def do_refresh() -> None:
     """Збирає розклад і зберігає його в GitHub. Прапорець running уже виставлено у refresh()."""
     global latest_schedule
@@ -173,11 +193,15 @@ def do_refresh() -> None:
 
         client = uz.Client()          # маршрути: прямий (у хмарі не працює) і Cloudflare Worker
         schedule = build_schedule.build(client, datetime.now(KYIV).date(), HORIZON, cache, False)
+
+        old, sha = (None, None)
+        if GH_TOKEN:
+            old, sha = gh_get_file("schedule.json")
+        schedule = merge_schedule(old, schedule)
         latest_schedule = schedule
 
         committed = False
         if GH_TOKEN:
-            old, sha = gh_get_file("schedule.json")
             if old is None or strip_volatile(old) != strip_volatile(schedule):
                 stamp = datetime.now(KYIV).strftime("%Y-%m-%d %H:%M")
                 gh_put_file("schedule.json", schedule, sha, f"Timetable update (gateway) {stamp}")

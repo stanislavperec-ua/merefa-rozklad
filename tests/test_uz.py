@@ -321,6 +321,50 @@ class SlotsTests(unittest.TestCase):
         self.assertEqual((slot.day, slot.hour), (14, 12))
 
 
+class MergeScheduleTests(unittest.TestCase):
+    """Кнопка ↻ збирає лише найближчі дні, решту днів треба зберегти."""
+
+    OLD = {
+        "generated": "2026-09-15T08:33:00+03:00",
+        "horizon": {"from": "2026-09-15", "to": "2026-09-28"},
+        "trains": {"1": {"num": "6685"}, "9": {"num": "6999"}},
+        "days": {f"2026-09-{d:02d}": {"running": ["1"], "cancelled": [], "off": []} for d in range(15, 29)},
+    }
+    FRESH = {
+        "generated": "2026-09-15T12:00:00+03:00",
+        "horizon": {"from": "2026-09-15", "to": "2026-09-18"},
+        "skipped_days": ["2026-09-17"],
+        "trains": {"1": {"num": "6685", "updated": True}},
+        "days": {
+            "2026-09-15": {"running": ["1", "2"], "cancelled": [], "off": []},
+            "2026-09-16": {"running": ["1"], "cancelled": [], "off": []},
+            "2026-09-18": {"running": ["1"], "cancelled": [], "off": []},
+        },
+    }
+
+    def setUp(self):
+        import gateway
+        self.merge = gateway.merge_schedule
+
+    def test_fresh_days_win_and_old_days_survive(self):
+        m = self.merge(self.OLD, self.FRESH)
+        self.assertEqual(m["days"]["2026-09-15"]["running"], ["1", "2"])
+        self.assertIn("2026-09-20", m["days"])
+        self.assertEqual(m["horizon"]["to"], "2026-09-28")
+
+    def test_skipped_day_is_dropped_not_kept_stale(self):
+        m = self.merge(self.OLD, self.FRESH)
+        self.assertNotIn("2026-09-17", m["days"])
+
+    def test_trains_are_merged(self):
+        m = self.merge(self.OLD, self.FRESH)
+        self.assertIn("9", m["trains"])
+        self.assertTrue(m["trains"]["1"]["updated"])
+
+    def test_without_previous_schedule(self):
+        self.assertEqual(self.merge(None, self.FRESH), self.FRESH)
+
+
 class KyivTzTests(unittest.TestCase):
     def test_fallback_offsets(self):
         tz = uz._KyivFallback()
