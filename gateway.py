@@ -63,6 +63,7 @@ state: dict = {
     "generated": None,
     "committed": False,
     "requests": 0,
+    "horizon": None,
 }
 state_lock = threading.RLock()   # реентерабельний: public_state() викликається і зсередини блоків
 latest_schedule: dict | None = None
@@ -173,7 +174,8 @@ def do_refresh() -> None:
             log.warning("Кеш поїздів недоступний, збираю без нього: %s", e)
 
         client = uz.Client()          # маршрути: прямий (у хмарі не працює) і Cloudflare Worker
-        schedule = build_schedule.build(client, datetime.now(KYIV).date(), HORIZON, cache, False)
+        horizon = state.get("horizon") or HORIZON
+        schedule = build_schedule.build(client, datetime.now(KYIV).date(), horizon, cache, False)
 
         old, sha = (None, None)
         if GH_TOKEN:
@@ -228,8 +230,13 @@ def refresh():
                     return cors(jsonify(status="too_soon", wait_seconds=wait, **public_state()))
             except ValueError:
                 pass
+        try:
+            days = int(request.args.get("days", HORIZON))
+        except ValueError:
+            days = HORIZON
         state.update(running=True, started=datetime.now(KYIV).isoformat(timespec="seconds"),
-                     finished=None, ok=None, message="збираю розклад з сайту УЗ")
+                     finished=None, ok=None, horizon=max(1, min(days, 21)),
+                     message=f"збираю розклад з сайту УЗ ({max(1, min(days, 21))} дн.)")
         payload = public_state()
     threading.Thread(target=do_refresh, daemon=True).start()
     return cors(jsonify(status="started", **payload))
