@@ -916,10 +916,11 @@ function diffFromToday(key) {
   return { gone, added, moved, count: gone.length + added.length + moved.length };
 }
 
-// Пояснення УЗ до поїзда: беремо повідомлення «Зміни руху», яке ще не втратило чинності
+// Пояснення УЗ до поїзда: лише повідомлення, чинне на обрану дату. Прострочене не годиться:
+// у 7001 висіло «з 07 по 16 вересня ВІДМІНЕНО» там, де поїзд якраз починає курсувати.
 function noteFor(train, key) {
-  const notes = (train.notes || []).filter(n => !n.to || n.to >= key);
-  return (notes[0] || (train.notes || [])[0] || {}).text || "";
+  const note = (train.notes || []).find(n => !n.to || n.to >= key);
+  return note ? note.text : "";
 }
 
 // ── Sidebar ──────────────────────────────────────────────
@@ -1178,9 +1179,10 @@ function renderChanges(key, res) {
         <span class="chg-link" onclick="openLink('${UZ_TRAIN_URL}${t.tid}')">на сайті УЗ ↗</span></div></div>`;
     });
     diff.moved.forEach(m => {
+      const why = noteFor(S.trains[m.tid] || {}, key);
       html += `<div class="chg-item"><b>№${esc(m.num)}</b> ${esc(m.route)} їде о <b>${esc(m.now)}</b>
         замість ${esc(m.was)} <span class="chg-meta">(${esc(stName(m.sid))})</span>
-        <div class="chg-meta"><span class="chg-link" onclick="openLink('${UZ_TRAIN_URL}${m.tid}')">на сайті УЗ ↗</span></div></div>`;
+        <div class="chg-meta">${why ? esc(why) + " · " : ""}<span class="chg-link" onclick="openLink('${UZ_TRAIN_URL}${m.tid}')">на сайті УЗ ↗</span></div></div>`;
     });
     diff.added.forEach(t => {
       const why = noteFor(t, key);
@@ -1201,7 +1203,10 @@ function renderChanges(key, res) {
     html += `</div>`;
   } else {
     html += `<div class="chg-card green"><h3>✓ ${shortDate(key)}: СКАСУВАНЬ НЕМАЄ</h3>
-      ${res.verified ? "Усі поїзди за терміном дії присутні в розкладі УЗ на цю дату." : "Дата поза перевіреним періодом: показано плановий розклад за терміном дії поїздів."}</div>`;
+      ${res.verified
+        ? (diff ? "Зміни, оголошені УЗ, уже враховано в розкладі вище: жоден рейс, що діє на цю дату, не скасовано."
+                : "Усі поїзди за терміном дії присутні в розкладі УЗ на цю дату.")
+        : "Дата поза перевіреним періодом: показано плановий розклад за терміном дії поїздів."}</div>`;
   }
 
   // Повідомлення УЗ «Зміни руху». Ті, що вже втратили чинність до обраної дати, не ховаємо
