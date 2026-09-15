@@ -95,6 +95,56 @@ class BuildScheduleTests(unittest.TestCase):
         self.assertEqual(set(e["stops"]), {str(s) for s in uz.STATION_SIDS})
         self.assertEqual(e["stops"]["2536"], {"arr": "07:47", "dep": "07:48"})
 
+    def test_network_failure_is_not_mass_cancellation(self):
+        """Збій завантаження дати не повинен виглядати як скасування всіх поїздів."""
+        page_all = read("pair_kh_mer_all.html")
+        page_date = read("pair_kh_mer_2026-09-14.html")
+        page_rev = read("pair_mer_kh_2026-09-15.html")
+        train = read("train_6685_tid28152.html")
+
+        class Fake:
+            requests_made = 0
+            route = None
+            routes = [None]
+
+            def pair_list(self, a, b, d=None):
+                self.requests_made += 1
+                if d == "2026-09-15":
+                    raise uz.UZError("522 Server Error")
+                return uz.parse_pair_list(page_all if d is None else
+                                          (page_date if a == uz.KHARKIV_SID else page_rev))
+
+            def train_page(self, tid):
+                self.requests_made += 1
+                return uz.parse_train_page(train, tid)
+
+        sched = build_schedule.build(Fake(), date(2026, 9, 14), 3, {}, False)
+        self.assertEqual(sched["skipped_days"], ["2026-09-15"])
+        self.assertNotIn("2026-09-15", sched["days"])
+        for day in sched["days"].values():
+            self.assertLessEqual(len(day["cancelled"]), 5, "збій не повинен давати масові скасування")
+
+    def test_too_many_failed_days_aborts_build(self):
+        """Якщо більшість дат не завантажилась, розклад не перезаписується взагалі."""
+        page_all = read("pair_kh_mer_all.html")
+
+        class Fake:
+            requests_made = 0
+            route = None
+            routes = [None]
+
+            def pair_list(self, a, b, d=None):
+                self.requests_made += 1
+                if d is None:
+                    return uz.parse_pair_list(page_all)
+                raise uz.UZError("522 Server Error")
+
+            def train_page(self, tid):
+                raise uz.UZError("unused")
+
+        with self.assertRaises(uz.UZError):
+            build_schedule.build(Fake(), date(2026, 9, 14), 4, {}, False)
+
     def test_pick_note(self):
         notes = [{"text": "a", "from": "2026-09-09", "to": "2026-09-16"}, {"text": "b", "from": "2026-09-20", "to": None}]
         self.assertEqual(build_schedule.pick_note(notes, "2026-09-10")["text"], "a")

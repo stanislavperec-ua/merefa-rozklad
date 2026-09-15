@@ -238,7 +238,9 @@ class Client:
             for route in order:
                 try:
                     if self.requests_made:
-                        time.sleep(self._pause_for(route))
+                        # 522 від шлюзу означає, що сайт УЗ відмовив у з'єднанні:
+                        # після невдачі чекаємо довше, щоб не довбати його поспіль
+                        time.sleep(self._pause_for(route) * (2 if last_err else 1))
                     text = self._fetch(route, params)
                     if route != self.route:
                         name = route or "напряму"

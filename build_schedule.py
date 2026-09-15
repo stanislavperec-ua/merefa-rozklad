@@ -117,10 +117,14 @@ def build(client: uz.Client, today: date, horizon: int, cache: dict, refresh_cac
         raise uz.UZError("повний перелік поїздів порожній: сайт УЗ віддав порожню таблицю")
     log.info("Повний перелік: %d поїздів", len(rows_by_tid))
 
-    # 2. Перелік на кожну дату
+    # 2. Перелік на кожну дату.
+    # Якщо хоч один напрямок не завантажився, дата вважається неперевіреною і в days не
+    # потрапляє: інакше збій мережі виглядав би як скасування всіх поїздів на цю дату.
     days: dict[str, dict] = {}
+    skipped: list[str] = []
     for ds in dates:
         running: list[str] = []
+        failed = False
         for a, b in ((kh, mer), (mer, kh)):
             try:
                 for r in client.pair_list(a, b, ds):
@@ -131,12 +135,19 @@ def build(client: uz.Client, today: date, horizon: int, cache: dict, refresh_cac
                     else:
                         rows_by_tid[r.tid] = r
             except uz.UZError as e:
+                failed = True
                 errors.append(f"{ds} {a}->{b}: {e}")
                 log.error("%s", errors[-1])
+        if failed or not running:
+            skipped.append(ds)
+            log.warning("%s: дату пропущено (помилка завантаження), скасування не визначаються", ds)
+            continue
         days[ds] = {"running": running}
         log.info("%s: курсує %d", ds, len(running))
-    if not any(d["running"] for d in days.values()):
-        raise uz.UZError("на жодну дату не отримано жодного поїзда")
+    if not days:
+        raise uz.UZError("на жодну дату не отримано переліку поїздів")
+    if len(skipped) > len(dates) // 2:
+        raise uz.UZError(f"завантажено лише {len(days)} дат із {len(dates)}: схоже на збій мережі")
 
     # 3. Сторінки поїздів (маршрут + зміни руху)
     trains: dict[str, dict] = {}
@@ -210,11 +221,13 @@ def build(client: uz.Client, today: date, horizon: int, cache: dict, refresh_cac
         "generated": now.isoformat(timespec="seconds"),
         "source": uz.BASE_URL,
         "horizon": {"from": dates[0], "to": dates[-1]},
+        "skipped_days": skipped,
         "stations": uz.STATIONS,
         "trains": public_trains,
         "days": days,
         "stats": {
             "requests": client.requests_made,
+            "skipped_days": len(skipped),
             "trains": len(public_trains),
             "route": getattr(client, "route", None) or "напряму",
             "errors": errors,
