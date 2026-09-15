@@ -9,9 +9,12 @@
     GET  /whoami           діагностика: мережа сервісу і чи бачить він сайт УЗ
     GET  /fetch?url=...    проксі однієї сторінки УЗ (запасний шлях для GitHub Actions)
     POST /refresh          зібрати розклад самотужки і закомітити в GitHub (повільний шлях)
-    POST /fast/start       швидкий шлях: видати телефону перелік сторінок для завантаження
-    POST /fast/pages       прийняти завантажені телефоном сторінки і розібрати їх
+    POST /fast/start       швидкий шлях: видати перелік сторінок для завантаження
+    POST /fast/pages       прийняти пачку сторінок у JSON (так робить Mini App)
+    POST /fast/page        прийняти одну сторінку сирим тілом (так робить Cloudflare Worker)
+    GET  /fast/state       чого сесії бракує і завдання наступної фази
     POST /fast/finish      зібрати розклад із прийнятих сторінок і закомітити
+    GET  /due              чи час оновлювати розклад (слоти 06:00 і 13:00 за Києвом)
     GET  /status           стан останньої збірки
     GET  /schedule.json    свіжозібраний розклад з пам'яті, без очікування GitHub Pages
 
@@ -29,6 +32,7 @@ from __future__ import annotations
 
 import base64
 import gzip
+import hmac
 import json
 import logging
 import os
@@ -57,6 +61,8 @@ GH_TOKEN = os.environ.get("GH_TOKEN", "")
 GH_REPO = os.environ.get("GH_REPO", "stanislavperec-ua/merefa-rozklad")
 GH_API = "https://api.github.com"
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")          # ним перевіряється підпис Telegram
+FAST_TOKEN = os.environ.get("FAST_TOKEN", "")        # спільний секрет із Cloudflare Worker
+SLOT_HOURS = [int(h) for h in os.environ.get("SLOTS", "6,13").split(",") if h.strip()]
 HORIZON = int(os.environ.get("HORIZON_DAYS", "4"))   # повільний шлях бере найближчі дні:
 # сайт УЗ з мережі Render відповідає неохоче, тому там важлива швидкість відповіді
 FAST_HORIZON = int(os.environ.get("FAST_HORIZON_DAYS", "14"))  # швидкий шлях устигає за всі
@@ -122,6 +128,8 @@ def whoami():
     info: dict = {"region_env": os.environ.get("RENDER_REGION", "невідомо"),
                   "telegram_check": bool(BOT_TOKEN),   # чи зможемо перевірити підпис Mini App
                   "github_token": bool(GH_TOKEN),
+                  "worker_token": bool(FAST_TOKEN),    # чи впізнаємо Cloudflare Worker
+                  "slots": SLOT_HOURS,
                   "fast_sessions": len(fast_sessions)}
     try:
         r = requests.get("https://ipinfo.io/json", timeout=(10, 20))
@@ -417,6 +425,76 @@ def sanity_check(old: dict | None, fresh: dict) -> tuple[bool, str]:
     return True, "зміни в межах звичайного"
 
 
+def from_worker() -> bool:
+    """Запит від Cloudflare Worker: він сам качає сторінки з сайту, тож дані достовірні."""
+    given = request.headers.get("X-Fast-Token", "")
+    return bool(FAST_TOKEN) and hmac.compare_digest(given.encode("utf-8"), FAST_TOKEN.encode("utf-8"))
+
+
+@gateway_bp.route("/due")
+def due():
+    """Чи час оновлювати розклад. Питає Cloudflare Worker, який ходить за розкладом сам.
+
+    Рішення ухвалюється за київським часом і за тим, що зараз лежить у репозиторії, тому
+    воно не залежить ні від годинника воркера, ні від того, чи бот перезапускався.
+    """
+    now = datetime.now(KYIV)
+    slot = build_schedule.last_slot(now, SLOT_HOURS)
+    old, _ = fetch_schedule()
+    generated = None
+    if old and old.get("generated"):
+        try:
+            generated = datetime.fromisoformat(old["generated"])
+        except ValueError:
+            generated = None
+    if generated is None:
+        return cors(jsonify(due=True, slot=slot.isoformat(timespec="minutes"),
+                            reason="розкладу ще немає або він нечитний"))
+    if generated.tzinfo is None:
+        generated = generated.replace(tzinfo=KYIV)
+    need = generated < slot
+    return cors(jsonify(due=need, slot=slot.isoformat(timespec="minutes"),
+                        generated=generated.isoformat(timespec="minutes"),
+                        reason=("останнє оновлення старіше за слот" if need else "слот уже відпрацьовано")))
+
+
+@gateway_bp.route("/fast/page", methods=["POST", "OPTIONS"])
+def fast_page():
+    """Одна сторінка сирим тілом: так її може переслати воркер, не читаючи в пам'ять.
+
+    Безкоштовний план Cloudflare дає воркеру лише 10 мс процесорного часу на виклик,
+    тож усе, що можна, він робить потоком: качає сторінку і одразу ллє її сюди.
+    """
+    if request.method == "OPTIONS":
+        return cors(Response("", 204))
+    session = fast_sessions.get(request.args.get("session", ""))
+    page_id = request.args.get("id", "")
+    if request.content_length and request.content_length > MAX_BODY:
+        abort(413)
+    raw = request.get_data(cache=False)
+    if request.headers.get("X-Gzip") == "1":
+        try:
+            raw = gzip.decompress(raw)
+        except (OSError, EOFError) as e:
+            return fail(f"не вдалося розпакувати сторінку: {e}")
+    try:
+        session.submit(page_id, raw.decode("utf-8", "replace"))
+    except (fastbuild.FastError, uz.UZError, ValueError, TypeError) as e:
+        log.warning("Сесія %s: сторінку %s відхилено: %s", session.id, page_id, str(e)[:160])
+        return fail(str(e)[:160])
+    session.advance()
+    with session.lock:
+        return cors(jsonify(status="ok", pending=len(session.pending), phase=session.phase))
+
+
+@gateway_bp.route("/fast/state")
+def fast_state():
+    """Що сесії ще бракує і які завдання наступної фази."""
+    session = fast_sessions.get(request.args.get("session", ""))
+    session.advance()
+    return cors(jsonify(status="ok", **session.state()))
+
+
 @gateway_bp.route("/fast/start", methods=["POST", "OPTIONS"])
 def fast_start():
     if request.method == "OPTIONS":
@@ -432,7 +510,7 @@ def fast_start():
         days = int(data.get("days") or FAST_HORIZON)
     except (TypeError, ValueError):
         days = FAST_HORIZON
-    trusted = bool(fastbuild.check_init_data(str(data.get("initData") or ""), BOT_TOKEN))
+    trusted = from_worker() or bool(fastbuild.check_init_data(str(data.get("initData") or ""), BOT_TOKEN))
     cache, cache_sha = load_cache()
     now = datetime.now(KYIV)
     session = fastbuild.Session(today=now.date(), horizon=days, cache=cache,

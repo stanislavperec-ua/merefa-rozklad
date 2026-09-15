@@ -85,11 +85,13 @@ class FastApiTests(unittest.TestCase):
     verdict = (True, "тест")
 
     # ── допоміжне ─────────────────────────────────────────
-    def post(self, path, payload, gzip_body=False):
+    def post(self, path, payload, gzip_body=False, token=None):
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         if gzip_body:
             raw, headers["X-Gzip"] = gzip.compress(raw), "1"
+        if token is not None:
+            headers["X-Fast-Token"] = token
         return self.client.post(path, data=raw, headers=headers)
 
     def send_pages(self, session, tasks, gzip_body=False, skip=()):
@@ -242,6 +244,68 @@ class FastApiTests(unittest.TestCase):
         self.assertTrue(st["ok"], st["message"])
         schedule = self.client.get("/schedule.json").get_json()
         self.assertEqual(len(schedule["skipped_days"]), 1)
+
+    def test_worker_token_is_trusted(self):
+        """Cloudflare Worker качає сторінки сам, тому його даним можна вірити без звірки."""
+        gateway.FAST_TOKEN = "секрет-воркера"
+        try:
+            ours = self.post("/fast/start", {"days": 1, "force": True}, token="секрет-воркера").get_json()
+            self.assertTrue(ours["trusted"])
+            gateway.fast_sessions = fastbuild.SessionStore()
+            gateway.state.update(finished=None)
+            stranger = self.post("/fast/start", {"days": 1, "force": True}, token="інший").get_json()
+            self.assertFalse(stranger["trusted"])
+        finally:
+            gateway.FAST_TOKEN = ""
+
+    def test_page_route_takes_raw_body(self):
+        """Воркер ллє сторінку сирим тілом, бо на розбір у нього немає процесорного часу."""
+        started = self.post("/fast/start", {"days": 1, "force": True}).get_json()
+        session = started["session"]
+        page = page_for("pair:2528:2538:").encode("utf-8")
+        r = self.client.post(f"/fast/page?session={session}&id=pair:2528:2538:",
+                             data=page, headers={"Content-Type": "text/html; charset=utf-8"})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["pending"], 3)
+
+        packed = gzip.compress(page_for("pair:2538:2528:").encode("utf-8"))
+        r = self.client.post(f"/fast/page?session={session}&id=pair:2538:2528:",
+                             data=packed, headers={"Content-Type": "text/html", "X-Gzip": "1"})
+        self.assertEqual(r.get_json()["pending"], 2)
+
+        bad = self.client.post(f"/fast/page?session={session}&id=pair:2528:2538:2026-09-14",
+                               data=b"<html>gateway error</html>", headers={"Content-Type": "text/html"})
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn("розклад УЗ", bad.get_json()["error"])
+
+    def test_state_route_reports_remaining_work(self):
+        started = self.post("/fast/start", {"days": 1, "force": True}).get_json()
+        session = started["session"]
+        for task in started["tasks"]:
+            self.client.post(f"/fast/page?session={session}&id={task['id']}",
+                             data=page_for(task["id"]).encode("utf-8"),
+                             headers={"Content-Type": "text/html"})
+        state = self.client.get(f"/fast/state?session={session}").get_json()
+        self.assertEqual(state["phase"], fastbuild.PHASE_TRAINS)
+        self.assertTrue(all(t["id"].startswith("train:") for t in state["tasks"]))
+        self.assertEqual(self.client.get("/fast/state?session=нема").status_code, 400)
+
+    def test_due_follows_slots(self):
+        def with_generated(value):
+            gateway.gh_get_file = lambda path: (({"generated": value}, "sha")
+                                                if path.endswith("schedule.json") else (None, None))
+
+        with_generated("2020-01-01T06:00:00+02:00")
+        old = self.client.get("/due").get_json()
+        self.assertTrue(old["due"], old)
+
+        with_generated(gateway.datetime.now(gateway.KYIV).isoformat(timespec="seconds"))
+        fresh = self.client.get("/due").get_json()
+        self.assertFalse(fresh["due"], fresh)
+
+        gateway.gh_get_file = lambda path: (None, None)
+        empty = self.client.get("/due").get_json()
+        self.assertTrue(empty["due"])
 
     def test_unknown_session(self):
         r = self.post("/fast/pages", {"session": "нема", "pages": []})
