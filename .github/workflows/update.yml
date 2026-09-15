@@ -11,7 +11,10 @@ name: Update schedule data
 
 on:
   schedule:
-    - cron: "*/30 2-20 * * *"
+    # Розклад у слоти 06:00 і 13:00 за Києвом збирає Cloudflare Worker за своїм Cron Trigger.
+    # Цей workflow оновлює live.json і лишається запасним шляхом для розкладу, тому ходить
+    # на чверть години пізніше: якщо воркер уже впорався, крок розкладу просто пропускається.
+    - cron: "15,45 2-20 * * *"
   workflow_dispatch:
     inputs:
       force:

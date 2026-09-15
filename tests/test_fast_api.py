@@ -219,6 +219,48 @@ class FastApiTests(unittest.TestCase):
         session.check = ("1999-01-01", {"1"}, None)
         self.assertIsNone(self.real_spot_check(session, schedule)[0], "дати немає в розкладі")
 
+    def test_timestamp_is_refreshed_even_without_changes(self):
+        """Інакше воркер і Actions не побачать, що слот відпрацьовано, і збиратимуть знову."""
+        old_stamp = "2020-01-01T06:00:00+02:00"
+        saved = []
+        gateway.GH_TOKEN = "fake"
+        gateway.gh_get_file = lambda path: (({"generated": old_stamp, "trains": {}, "days": {},
+                                              "horizon": {"from": "2026-09-15", "to": "2026-09-15"}}, "sha")
+                                            if path.endswith("schedule.json") else (None, None))
+        gateway.gh_put_file = lambda path, payload, sha, message: saved.append(message)
+        try:
+            same = {"generated": gateway.datetime.now(gateway.KYIV).isoformat(timespec="seconds"),
+                    "trains": {}, "days": {}, "horizon": {"from": "2026-09-15", "to": "2026-09-15"}}
+            _, committed, msg = gateway.store_schedule(same, {}, None)
+            self.assertTrue(committed, msg)
+            self.assertIn("позначку часу", msg)
+            self.assertTrue(saved and saved[0].startswith("Timetable check"))
+        finally:
+            gateway.GH_TOKEN = ""
+
+    def test_no_commit_when_slot_already_done(self):
+        fresh_stamp = gateway.datetime.now(gateway.KYIV).isoformat(timespec="seconds")
+        gateway.GH_TOKEN = "fake"
+        gateway.gh_get_file = lambda path: (({"generated": fresh_stamp, "trains": {}, "days": {},
+                                              "horizon": {"from": "2026-09-15", "to": "2026-09-15"}}, "sha")
+                                            if path.endswith("schedule.json") else (None, None))
+        gateway.gh_put_file = lambda *a, **kw: self.fail("комітити нема чого")
+        try:
+            same = {"generated": fresh_stamp, "trains": {}, "days": {},
+                    "horizon": {"from": "2026-09-15", "to": "2026-09-15"}}
+            _, committed, msg = gateway.store_schedule(same, {}, None)
+            self.assertFalse(committed)
+            self.assertEqual(msg, "розклад не змінився")
+        finally:
+            gateway.GH_TOKEN = ""
+
+    def test_older_than_slot(self):
+        now = gateway.datetime.now(gateway.KYIV)
+        self.assertTrue(gateway.older_than_slot(None, now))
+        self.assertTrue(gateway.older_than_slot({"generated": "2020-01-01T06:00:00+02:00"}, now))
+        self.assertTrue(gateway.older_than_slot({"generated": "не дата"}, now))
+        self.assertFalse(gateway.older_than_slot({"generated": now.isoformat(timespec="seconds")}, now))
+
     def test_sanity_check(self):
         old = {"trains": {str(i): {} for i in range(29)},
                "days": {"2026-09-15": {"running": [str(i) for i in range(27)]}}}

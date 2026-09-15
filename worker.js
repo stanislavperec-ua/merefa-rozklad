@@ -140,14 +140,18 @@ async function handleBatch(request, env) {
   });
 }
 
+// Порція виконується окремим викликом воркера, щоб мати власні 50 підзапитів.
+// Викликати себе за публічною адресою Cloudflare не дає (віддає 404), тому потрібна
+// службова прив'язка воркера на самого себе (Settings → Bindings → Service: SELF).
 async function runBatch(session, tasks, env) {
   const url = (env.SELF_URL || SELF) + "/batch";
-  const r = await fetch(url, {
+  const init = {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Fast-Token": env.FAST_TOKEN || "" },
     signal: AbortSignal.timeout(300000),
     body: JSON.stringify({ session, tasks }),
-  });
+  };
+  const r = env.SELF ? await env.SELF.fetch(url, init) : await fetch(url, init);
   if (!r.ok) throw new Error("/batch: HTTP " + r.status);
   return r.json();
 }

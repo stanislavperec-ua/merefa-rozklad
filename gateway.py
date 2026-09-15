@@ -245,6 +245,21 @@ def fetch_schedule() -> tuple[dict | None, str | None]:
         return None, None
 
 
+def older_than_slot(schedule: dict | None, now: datetime | None = None) -> bool:
+    """Чи зібраний розклад старіший за останній слот оновлення (06:00 / 13:00 за Києвом)."""
+    now = now or datetime.now(KYIV)
+    slot = build_schedule.last_slot(now, SLOT_HOURS)
+    if not schedule or not schedule.get("generated"):
+        return True
+    try:
+        generated = datetime.fromisoformat(schedule["generated"])
+    except ValueError:
+        return True
+    if generated.tzinfo is None:
+        generated = generated.replace(tzinfo=KYIV)
+    return generated < slot
+
+
 def store_schedule(schedule: dict, cache: dict, cache_sha: str | None,
                    commit: bool = True, previous: tuple | None = None) -> tuple[dict, bool, str]:
     """Зливає з попереднім розкладом, кладе в пам'ять і, якщо дозволено, комітить у GitHub."""
@@ -259,10 +274,16 @@ def store_schedule(schedule: dict, cache: dict, cache_sha: str | None,
         return schedule, False, "розклад зібрано (GH_TOKEN не задано, у GitHub не збережено)"
     if not commit:
         return schedule, False, "розклад зібрано, але не збережено в GitHub"
-    if old is not None and strip_volatile(old) == strip_volatile(schedule):
+    # Позначку часу треба оновити навіть тоді, коли розклад не змінився: за нею і воркер,
+    # і GitHub Actions розуміють, що слот відпрацьовано. Інакше вони збирали б знову і знову.
+    same = old is not None and strip_volatile(old) == strip_volatile(schedule)
+    if same and not older_than_slot(old):
         return schedule, False, "розклад не змінився"
 
     stamp = datetime.now(KYIV).strftime("%Y-%m-%d %H:%M")
+    if same:
+        gh_put_file("schedule.json", schedule, sha, f"Timetable check (gateway) {stamp}")
+        return schedule, True, "розклад не змінився, оновлено позначку часу"
     gh_put_file("schedule.json", schedule, sha, f"Timetable update (gateway) {stamp}")
     if cache:
         try:
@@ -441,20 +462,9 @@ def due():
     now = datetime.now(KYIV)
     slot = build_schedule.last_slot(now, SLOT_HOURS)
     old, _ = fetch_schedule()
-    generated = None
-    if old and old.get("generated"):
-        try:
-            generated = datetime.fromisoformat(old["generated"])
-        except ValueError:
-            generated = None
-    if generated is None:
-        return cors(jsonify(due=True, slot=slot.isoformat(timespec="minutes"),
-                            reason="розкладу ще немає або він нечитний"))
-    if generated.tzinfo is None:
-        generated = generated.replace(tzinfo=KYIV)
-    need = generated < slot
+    need = older_than_slot(old, now)
     return cors(jsonify(due=need, slot=slot.isoformat(timespec="minutes"),
-                        generated=generated.isoformat(timespec="minutes"),
+                        generated=(old or {}).get("generated"),
                         reason=("останнє оновлення старіше за слот" if need else "слот уже відпрацьовано")))
 
 
@@ -510,7 +520,9 @@ def fast_start():
         days = int(data.get("days") or FAST_HORIZON)
     except (TypeError, ValueError):
         days = FAST_HORIZON
-    trusted = from_worker() or bool(fastbuild.check_init_data(str(data.get("initData") or ""), BOT_TOKEN))
+    worker = from_worker()
+    telegram = bool(fastbuild.check_init_data(str(data.get("initData") or ""), BOT_TOKEN))
+    trusted = worker or telegram          # ці двоє качають сторінки самі, звірка їм не потрібна
     cache, cache_sha = load_cache()
     now = datetime.now(KYIV)
     session = fastbuild.Session(today=now.date(), horizon=days, cache=cache,
@@ -519,8 +531,9 @@ def fast_start():
     fast_sessions.add(session)
     if not trusted:
         start_spot_check(session)      # звірка йде паралельно, щоб не чекати на неї в кінці
-    log.info("Швидке оновлення %s: %d днів, %d сторінок, підпис Telegram: %s",
-             session.id, session.horizon, len(session.tasks), "є" if trusted else "немає")
+    log.info("Швидке оновлення %s: %d днів, %d сторінок, джерело: %s",
+             session.id, session.horizon, len(session.tasks),
+             "Cloudflare Worker" if worker else ("Mini App у Telegram" if telegram else "браузер"))
     return cors(jsonify(status="started", trusted=trusted, horizon=session.horizon,
                         **session.state()))
 
