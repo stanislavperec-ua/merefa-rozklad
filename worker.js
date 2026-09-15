@@ -157,17 +157,29 @@ async function runBatch(session, tasks, env) {
 }
 
 // Повне оновлення: план у бота → сторінки порціями → збірка і коміт
+// Сайт УЗ пускає не кожен дата-центр Cloudflare, а воркер виконується поруч із тим, хто
+// його покликав. Знати колокацію треба, щоб розуміти, чому сторінки не даються.
+async function colo() {
+  try {
+    const trace = await fetch("https://www.cloudflare.com/cdn-cgi/trace").then(r => r.text());
+    return (trace.match(/colo=(\w+)/) || [])[1] || "?";
+  } catch (e) {
+    return "?";
+  }
+}
+
 async function runUpdate(env, force) {
-  const log = [];
+  const place = await colo();
+  const log = ["дата-центр " + place];
   if (!env.FAST_TOKEN) return { ok: false, reason: "не задано секрет FAST_TOKEN" };
 
   if (!force) {
-    const due = await askBot("/due", undefined, env);
+    const due = await askBot("/due?from=" + place, undefined, env);
     log.push("due: " + due.due + " (" + due.reason + ")");
     if (!due.due) return { ok: true, skipped: true, log };
   }
 
-  const start = await askBot("/fast/start", { days: HORIZON_DAYS, force: true }, env);
+  const start = await askBot("/fast/start", { days: HORIZON_DAYS, force: true, from: place }, env);
   if (start.status !== "started") {
     log.push("бот відповів: " + start.status);
     return { ok: start.status === "running", skipped: true, log };
@@ -177,15 +189,24 @@ async function runUpdate(env, force) {
   // Один прохід качає все, що бот просить; наступні проходи добирають те, що не вдалося,
   // і забирають завдання другої фази (сторінки поїздів зі «Змінами руху»).
   let tasks = start.tasks;
+  let phase = null;
   for (let round = 0; round < 4 && tasks.length; round++) {
     for (let i = 0; i < tasks.length; i += PAGES_PER_CALL) {
       const part = await runBatch(start.session, tasks.slice(i, i + PAGES_PER_CALL), env);
       log.push("порція " + part.ok + " із " + Math.min(PAGES_PER_CALL, tasks.length - i));
     }
-    const state = await askBot("/fast/state?session=" + encodeURIComponent(start.session), undefined, env);
-    log.push("фаза " + state.phase + ", лишилось " + state.pending);
-    if (state.phase === "ready") break;
-    tasks = state.tasks || [];
+    phase = await askBot("/fast/state?session=" + encodeURIComponent(start.session), undefined, env);
+    log.push("фаза " + phase.phase + ", лишилось " + phase.pending);
+    if (phase.phase === "ready") break;
+    tasks = phase.tasks || [];
+  }
+
+  // Сайт УЗ пускає не кожен дата-центр Cloudflare, а воркер виконується поруч із тим, хто
+  // його покликав. Якщо сторінки не даються, збірку не завершуємо: краще лишити старий
+  // розклад, ніж зіпсувати його недокачаними датами.
+  if (phase && phase.phase !== "ready" && phase.pending > 3) {
+    log.push("сторінки не даються, збірку не завершую");
+    return { ok: false, reason: "не вдалося завантажити " + phase.pending + " сторінок", log };
   }
 
   const finish = await askBot("/fast/finish", { session: start.session }, env);
@@ -243,9 +264,10 @@ export default {
     }
   },
 
-  // Cron Trigger: питає бота, чи настав слот оновлення, і якщо так, збирає розклад
+  // Cron Trigger: питає бота, чи настав слот оновлення, і якщо так, збирає розклад.
+  // FORCE_CRON=1 у змінних воркера змушує збирати одразу: так перевіряють цей шлях.
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runUpdate(env, false).then(
+    ctx.waitUntil(runUpdate(env, env.FORCE_CRON === "1").then(
       res => console.log("оновлення:", JSON.stringify(res)),
       err => console.log("оновлення не вдалося:", String(err))));
   },

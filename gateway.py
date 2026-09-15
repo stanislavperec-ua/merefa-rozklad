@@ -531,9 +531,11 @@ def fast_start():
     fast_sessions.add(session)
     if not trusted:
         start_spot_check(session)      # звірка йде паралельно, щоб не чекати на неї в кінці
+    source = "Cloudflare Worker" if worker else ("Mini App у Telegram" if telegram else "браузер")
+    if worker and data.get("from"):
+        source += f" ({data['from']})"      # дата-центр воркера: від нього залежить, чи пустить сайт
     log.info("Швидке оновлення %s: %d днів, %d сторінок, джерело: %s",
-             session.id, session.horizon, len(session.tasks),
-             "Cloudflare Worker" if worker else ("Mini App у Telegram" if telegram else "браузер"))
+             session.id, session.horizon, len(session.tasks), source)
     return cors(jsonify(status="started", trusted=trusted, horizon=session.horizon,
                         **session.state()))
 
