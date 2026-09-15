@@ -52,33 +52,38 @@ Microsoft і Google. Тому запити йдуть через **Cloudflare Wo
 ### Схема
 
 ```
-Cloudflare Worker (/fetch)  ←── єдиний шлях до swrailway.gov.ua
-        ▲                    ▲
-        │                    │
-   бот на Render        GitHub Actions
-   (збирає розклад,     (щопівгодини перевіряє слот 06:00/10:00/13:00
-    комітить у GitHub)   і просить бота оновитись)
-        ▲
-        │ кнопка ↻
-   Mini App
+Cloudflare Worker /fetch  ←── єдиний шлях до swrailway.gov.ua з хмари
+        ▲                      ▲
+        │                      │
+GitHub Actions            бот на Render
+(слоти 06:00/10:00/13:00, (кнопка ↻ у Mini App: збирає і комітить сам)
+ збирає і комітить)
+        │
+        ▼
+GitHub Pages: index.html читає schedule.json + live.json
 ```
 
-Збирач (`gateway.py`) підключений до бота як Blueprint, тому окремий сервіс на Render
-не потрібен і безкоштовні 750 годин на місяць не витрачаються двічі.
+Збірку виконує GitHub Actions: там нормальний процесор і повний прогін триває кілька хвилин.
+Бот теж уміє збирати (маршрути з `gateway.py`), але на безкоштовному Render лише 0.1 CPU,
+тому кнопка ↻ покладається на кеш `trains_cache.json` і працює приблизно дві хвилини.
+
+### Стійкість до збоїв
+
+Сайт УЗ віддає шлюзу 522, якщо стукати надто часто, тому пауза між запитами 3 секунди
+і чотири спроби. Якщо дата все одно не завантажилась, вона потрапляє в `skipped_days`
+і **не** вважається днем без поїздів: інакше мережевий збій виглядав би як скасування
+всього розкладу. Якщо не зібралась більшість дат, `schedule.json` не перезаписується.
 
 ### Налаштування (одноразово, безкоштовно)
 
 1. **Cloudflare Worker.** https://dash.cloudflare.com → Compute (Workers) → Create →
-   Start with Hello World → Deploy → Edit code → вставити вміст `worker.js` → Deploy.
-   Отримана адреса виду `https://<назва>.<акаунт>.workers.dev`.
-2. **Змінні бота.** https://dashboard.render.com → сервіс `merefa-rozklad` → Environment:
-   * `GH_TOKEN` = fine-grained token GitHub з правом Contents: Read and write;
-   * `UZ_GATEWAYS` = `https://<адреса-воркера>/fetch?url={url}` (дужки `{url}` залишити як є);
-   * `UZ_DIRECT` = `0`.
-3. **Секрет репозиторію.** Settings → Secrets and variables → Actions → New repository secret:
-   `GATEWAY_URL` = `https://merefa-rozklad.onrender.com`.
+   Start with Hello World → Deploy → Edit code → вставити `worker.js` → Deploy.
+   Адреса вже прописана в `uz.GATEWAYS`; якщо створите свій, замініть її там.
+2. **Токен для бота.** https://dashboard.render.com → merefa-rozklad → Environment →
+   `GH_TOKEN` = fine-grained token GitHub з правом Contents: Read and write.
+   Потрібен лише для кнопки ↻; автоматичні оновлення від нього не залежать.
 
-Після цього оновлення автономне: тричі на добу і кнопкою ↻ з Mini App.
+Запасний шлях, якщо все впаде: `update_schedule.cmd` на ПК в Україні (прямий доступ до сайту УЗ).
 
 ## Локальний запуск
 
