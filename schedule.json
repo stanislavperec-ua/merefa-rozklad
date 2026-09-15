@@ -1,6 +1,6 @@
 {
  "version": 2,
- "generated": "2026-09-15T12:19:25+03:00",
+ "generated": "2026-09-15T12:28:44+03:00",
  "source": "https://swrailway.gov.ua/timetable/eltrain/",
  "horizon": {
   "from": "2026-09-15",
@@ -522,7 +522,13 @@
      "dep": "17:55"
     }
    },
-   "notes": []
+   "notes": [
+    {
+     "text": "З 17 вересня 2026 року поїзд №6525 Харків Пас -Герсеванівський змінює графік руху",
+     "from": "2026-09-15",
+     "to": "2026-09-18"
+    }
+   ]
   },
   "15372": {
    "num": "6705",
@@ -2208,9 +2214,9 @@
   }
  },
  "stats": {
-  "requests": 13,
+  "requests": 37,
   "skipped_days": 0,
-  "busy_hits": 0,
+  "busy_hits": 3,
   "trains": 29,
   "route": "https://merefa-uz-gateway.stanislav-perec.workers.dev/fetch?url={url}",
   "errors": []
