@@ -29,6 +29,7 @@ import time
 from datetime import datetime, timedelta
 
 import requests
+from urllib.parse import quote
 from flask import Blueprint, Flask, Response, abort, jsonify, request
 
 import build_schedule
@@ -102,6 +103,21 @@ def whoami():
     except Exception as e:  # noqa: BLE001
         info["uz_error"] = str(e)[:200]
     info["uz_seconds"] = round(time.time() - started, 1)
+
+    # Через Cloudflare Worker: важливо знати, в якому дата-центрі він виконується,
+    # бо сайт УЗ пускає лише частину з них (заголовок cf-ray закінчується кодом колокації).
+    for gw in uz.default_gateways()[:1]:
+        target = uz.BASE_URL + "?sid1=2528&sid2=2538&dateR=0"
+        url = gw.replace("{url}", quote(target, safe=""))
+        t0 = time.time()
+        try:
+            r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=(15, 40))
+            info["worker_status"] = r.status_code
+            info["worker_colo"] = (r.headers.get("cf-ray") or "").split("-")[-1]
+            info["worker_trains"] = len(uz.parse_pair_list(r.text)) if r.ok else 0
+        except Exception as e:  # noqa: BLE001
+            info["worker_error"] = str(e)[:160]
+        info["worker_seconds"] = round(time.time() - t0, 1)
     return cors(jsonify(**info))
 
 
