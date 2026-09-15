@@ -323,10 +323,16 @@
   .tbl-wrap { margin-bottom: 18px; }
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 
-  .col-time { width: 21%; }
-  .col-num  { width: 28%; }
-  .col-end  { width: 20%; }
-  .col-note { width: 31%; }
+  /* Режим «Станція»: відпр. / № і напрямок / кінцева / примітка */
+  .col-time { width: 20%; }
+  .col-num  { width: 31%; }
+  .col-end  { width: 19%; }
+  .col-note { width: 30%; }
+  /* Режим «Маршрут»: відпр. / приб. / № і напрямок / примітка.
+     Колонка з назвою ширша: «Герсеванівський» має вміщатися в один рядок. */
+  .rc-time { width: 19.5%; }
+  .rc-num  { width: 35%; }
+  .rc-note { width: 26%; }
 
   th {
     text-align: left;
@@ -392,6 +398,20 @@
   .d-note { margin-top: 7px; font-size: 11px; color: #ffe066; line-height: 1.4; }
   .d-live { margin-top: 7px; font-size: 11px; color: #ffb347; line-height: 1.4; }
   .d-link { color: var(--blue); text-decoration: underline; cursor: pointer; font-size: 11px; margin-top: 7px; margin-right: 12px; display: inline-block; }
+
+  /* Вузькі екрани (iPhone SE та подібні): тісніше, щоб час не обрізався */
+  @media (max-width: 360px) {
+    #sidebar { width: 88px; min-width: 88px; }
+    #rail { padding-left: 13px; }
+    #rail::before { left: 7px; }
+    .st-name { font-size: 10px; }
+    #main { padding: 10px 6px 16px; }
+    .t-time { font-size: 13px; }
+    .t-num  { font-size: 12px; }
+    .t-sub-blue, .t-sub-green { font-size: 8.5px; }
+    td { padding: 7px 3px; }
+    th { font-size: 10px; padding: 6px 3px; }
+  }
 
   /* ROUTE mode */
   .route-box {
@@ -965,7 +985,7 @@ function renderRoute(key, res) {
     </div>
     ${legendHtml()}
     <div class="tbl-wrap"><table>
-      <colgroup><col class="col-time"><col class="col-time"><col class="col-num"><col class="col-note"></colgroup>
+      <colgroup><col class="rc-time"><col class="rc-time"><col class="rc-num"><col class="rc-note"></colgroup>
       <thead><tr><th>Відпр.</th><th>Приб.</th><th>№ / ${going ? "Кінцева" : "Звідки"}</th><th>Прим.</th></tr></thead>
       <tbody>`;
   if (!rd.length) html += `<tr><td colspan="4" class="nodata">Немає рейсів</td></tr>`;
