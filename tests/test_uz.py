@@ -17,6 +17,14 @@ import uz                      # noqa: E402
 import build_schedule          # noqa: E402
 import build_live              # noqa: E402
 
+# gateway.py потребує Flask, якого немає в раннері GitHub: тести самого збирача
+# не повинні від нього залежати. Якщо колись знадобиться, пропускаємо їх свідомо.
+try:
+    import gateway             # noqa: E402,F401
+    HAS_FLASK = True
+except ImportError:
+    HAS_FLASK = False
+
 FIX = os.path.join(HERE, "fixtures")
 
 
@@ -343,8 +351,7 @@ class MergeScheduleTests(unittest.TestCase):
     }
 
     def setUp(self):
-        import gateway
-        self.merge = gateway.merge_schedule
+        self.merge = build_schedule.merge_schedule
 
     def test_fresh_days_win_and_old_days_survive(self):
         m = self.merge(self.OLD, self.FRESH)

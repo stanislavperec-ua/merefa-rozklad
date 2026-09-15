@@ -235,6 +235,25 @@ def build(client: uz.Client, today: date, horizon: int, cache: dict, refresh_cac
     }
 
 
+def merge_schedule(old: dict | None, fresh: dict) -> dict:
+    """Кнопка збирає лише найближчі дні, тому решту днів беремо з попереднього розкладу.
+
+    Повні 14 днів збирає GitHub Actions; тут важливо не загубити вже відомі дати.
+    """
+    if not old or not old.get("days"):
+        return fresh
+    merged = dict(fresh)
+    merged["trains"] = {**old.get("trains", {}), **fresh.get("trains", {})}
+    merged["days"] = {**old.get("days", {}), **fresh.get("days", {})}
+    for ds in fresh.get("skipped_days", []):
+        merged["days"].pop(ds, None)          # дата не зібралась: краще без неї, ніж зі старою
+    horizon_to = max(old.get("horizon", {}).get("to", ""), fresh["horizon"]["to"])
+    merged["horizon"] = {"from": fresh["horizon"]["from"], "to": horizon_to}
+    merged["days"] = {k: v for k, v in sorted(merged["days"].items())
+                      if k >= fresh["horizon"]["from"]}
+    return merged
+
+
 def schedule_generated(path: str) -> datetime | None:
     data = load_json(path, None)
     if not data or not data.get("generated"):

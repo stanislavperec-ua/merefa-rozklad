@@ -161,25 +161,6 @@ def strip_volatile(schedule: dict) -> str:
     return json.dumps(copy, ensure_ascii=False, sort_keys=True)
 
 
-def merge_schedule(old: dict | None, fresh: dict) -> dict:
-    """Кнопка збирає лише найближчі дні, тому решту днів беремо з попереднього розкладу.
-
-    Повні 14 днів збирає GitHub Actions; тут важливо не загубити вже відомі дати.
-    """
-    if not old or not old.get("days"):
-        return fresh
-    merged = dict(fresh)
-    merged["trains"] = {**old.get("trains", {}), **fresh.get("trains", {})}
-    merged["days"] = {**old.get("days", {}), **fresh.get("days", {})}
-    for ds in fresh.get("skipped_days", []):
-        merged["days"].pop(ds, None)          # дата не зібралась: краще без неї, ніж зі старою
-    horizon_to = max(old.get("horizon", {}).get("to", ""), fresh["horizon"]["to"])
-    merged["horizon"] = {"from": fresh["horizon"]["from"], "to": horizon_to}
-    merged["days"] = {k: v for k, v in sorted(merged["days"].items())
-                      if k >= fresh["horizon"]["from"]}
-    return merged
-
-
 def do_refresh() -> None:
     """Збирає розклад і зберігає його в GitHub. Прапорець running уже виставлено у refresh()."""
     global latest_schedule
@@ -197,7 +178,7 @@ def do_refresh() -> None:
         old, sha = (None, None)
         if GH_TOKEN:
             old, sha = gh_get_file("schedule.json")
-        schedule = merge_schedule(old, schedule)
+        schedule = build_schedule.merge_schedule(old, schedule)
         latest_schedule = schedule
 
         committed = False
