@@ -11,7 +11,7 @@ Telegram Mini App і бот з розкладом приміських елек�
 
 ```
 GitHub Actions (щопівгодини)
-  ├─ build_schedule.py  ──► schedule.json  (офіційний розклад УЗ на 14 днів; збирається о 06:00, 10:00 і 13:00 за Києвом)
+  ├─ build_schedule.py  ──► schedule.json  (офіційний розклад УЗ на 14 днів; збирається о 06:00 і 13:00 за Києвом)
   └─ build_live.py      ──► live.json      (канал УЗ: затримки / скасування за останні 12 год)
                                  │ commit у main
                                  ▼
@@ -56,7 +56,7 @@ Cloudflare Worker /fetch  ←── єдиний шлях до swrailway.gov.ua 
         ▲                       ▲
    Mini App, ПК            бот на Render: збирає розклад і комітить через GitHub API
                                 ▲
-        GitHub Actions ─────────┘  будить бота у слоти 06:00, 10:00, 13:00
+        GitHub Actions ─────────┘  будить бота у слоти 06:00 і 13:00
         (щопівгодини оновлює live.json з каналу УЗ)
 ```
 

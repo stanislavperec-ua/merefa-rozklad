@@ -2,7 +2,7 @@ name: Update schedule data
 
 # Джерела даних:
 #   * build_live.py : канал УЗ (затримки, скасування) щопівгодини, доступний звідусіль;
-#   * розклад swrailway.gov.ua : тричі на добу, о 06:00, 10:00 і 13:00 за Києвом.
+#   * розклад swrailway.gov.ua : двічі на добу, о 06:00 і 13:00 за Києвом.
 #
 # Сайт УЗ відкидає з'єднання з великих хмар. Єдиний шлях до нього це Cloudflare Worker
 # (worker.js), але воркер виконується поруч із тим, хто його викликав: із раннера GitHub
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Оновити розклад негайно, не чекаючи слоту 06:00/10:00/13:00"
+        description: "Оновити розклад негайно, не чекаючи слоту 06:00/13:00"
         type: boolean
         default: false
       refresh_cache:
@@ -36,7 +36,7 @@ jobs:
     timeout-minutes: 25
     env:
       UZ_GATEWAYS: ${{ secrets.UZ_GATEWAYS }}
-      SLOTS: "6,10,13"
+      SLOTS: "6,13"
     steps:
       - uses: actions/checkout@v4
 
