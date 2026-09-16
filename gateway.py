@@ -136,7 +136,8 @@ def whoami():
                   "worker_token": bool(FAST_TOKEN),    # чи впізнаємо Cloudflare Worker
                   "slots": SLOT_HOURS,
                   "fast_sessions": len(fast_sessions),
-                  "live": {k: live_state.get(k) for k in ("finished", "ok", "items", "message")}}
+                  "live": {k: live_state.get(k) for k in ("finished", "ok", "items", "message")},
+                  "poke": poke_state}
     try:
         r = requests.get("https://ipinfo.io/json", timeout=(10, 20))
         data = r.json()
@@ -362,6 +363,9 @@ def status():
 # ──────────────────────────────────────────────────────────────────────
 # Оперативні повідомлення каналу УЗ (затримки, скасування)
 # ──────────────────────────────────────────────────────────────────────
+WORKER_URL = os.environ.get("WORKER_URL", "https://merefa-uz-gateway.stanislav-perec.workers.dev")
+POKE_INTERVAL = timedelta(minutes=int(os.environ.get("POKE_WORKER_MINUTES", "30")))
+poke_state: dict = {"at": None, "result": None}
 LIVE_MIN_INTERVAL = timedelta(minutes=int(os.environ.get("MIN_LIVE_MINUTES", "10")))
 LIVE_AUTO_INTERVAL = timedelta(minutes=int(os.environ.get("LIVE_AUTO_MINUTES", "25")))
 LIVE_HOURS = float(os.environ.get("LIVE_HOURS", "12"))
@@ -461,6 +465,42 @@ def maybe_collect_live() -> None:
             return
         live_state["running"] = True
     threading.Thread(target=do_live, daemon=True).start()
+
+
+def poke_worker() -> None:
+    """Просить Cloudflare Worker перевірити слот розкладу і, якщо час, зібрати його.
+
+    Воркер має власний Cron Trigger, але покладатися лише на нього не можна: після зміни
+    розкладу він мовчав (перевірено 16.09.2026 о 06:30 і 07:00). Пінг UptimeRobot приходить
+    завжди, тож бот сам нагадує воркеру. `via=do` обов'язковий: інакше воркер виконався б
+    поруч із ботом, у США, звідки сайт УЗ майже не відповідає.
+    """
+    try:
+        r = requests.post(f"{WORKER_URL}/run?via=do", headers={"X-Fast-Token": FAST_TOKEN},
+                          timeout=(15, 600))
+        result = r.json() if r.ok else {"http": r.status_code}
+    except Exception as e:  # noqa: BLE001
+        result = {"error": str(e)[:160]}
+    poke_state.update(at=datetime.now(KYIV).isoformat(timespec="seconds"), result=result)
+    log.info("Нагадав воркеру про розклад: %s", str(result)[:200])
+
+
+def maybe_poke_worker() -> None:
+    """Раз на POKE_INTERVAL нагадуємо воркеру; сам воркер вирішує, чи настав слот."""
+    if not FAST_TOKEN:
+        return
+    now = datetime.now(KYIV)
+    if not (LIVE_DAY_FROM <= now.hour or now.hour <= LIVE_DAY_TO):
+        return
+    last = poke_state.get("at")
+    if last:
+        try:
+            if (now - datetime.fromisoformat(last)) < POKE_INTERVAL:
+                return
+        except ValueError:
+            pass
+    poke_state["at"] = now.isoformat(timespec="seconds")   # позначаємо одразу, щоб не задвоїти
+    threading.Thread(target=poke_worker, daemon=True).start()
 
 
 @gateway_bp.route("/live", methods=["POST", "GET", "OPTIONS"])

@@ -29,7 +29,8 @@
  * Маршрути:
  *   GET  /            health-check
  *   GET  /fetch?url=  проксі сторінки УЗ (ним користуються Mini App, бот і ПК)
- *   POST /run         запустити оновлення розкладу негайно (потрібен X-Fast-Token)
+ *   POST /run         запустити оновлення розкладу негайно (потрібен X-Fast-Token);
+ *                     ?via=do виконує роботу в Durable Object у Варшаві
  *   POST /batch       службовий: воркер викликає сам себе, щоб не впертись у 50 підзапитів
  */
 
@@ -237,7 +238,16 @@ export default {
     if (url.pathname === "/run") {
       if (!tokenOk(request, env)) return new Response("forbidden", { status: 403 });
       const force = url.searchParams.get("force") === "1";
+      // via=do передає роботу Durable Object у Варшаві. Це потрібно, коли воркер кличе
+      // хтось із неєвропейської мережі (наприклад, сам бот з Орегона): інакше сторінки
+      // качалися б з американського дата-центру, який сайт УЗ майже не пускає.
+      const viaDo = url.searchParams.get("via") === "do" && Boolean(env.SCHEDULER);
       try {
+        if (viaDo) {
+          const stub = env.SCHEDULER.get(env.SCHEDULER.idFromName("merefa"), { locationHint: "eeur" });
+          const r = await stub.fetch("https://scheduler/tick" + (force ? "?force=1" : ""));
+          return new Response(r.body, { status: r.status, headers: { "Content-Type": "application/json" } });
+        }
         return Response.json(await runUpdate(env, force));
       } catch (e) {
         return Response.json({ ok: false, error: String(e) }, { status: 500 });

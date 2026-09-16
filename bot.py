@@ -335,8 +335,9 @@ def index():
     # (cron GitHub Actions пропускає запуски, а Cloudflare виконує свій, коли вирішить).
     try:
         gateway.maybe_collect_live()
+        gateway.maybe_poke_worker()
     except Exception:  # noqa: BLE001
-        log.exception("Не вдалося запустити читання каналу")
+        log.exception("Не вдалося запустити фонове оновлення")
     return "OK", 200
 
 

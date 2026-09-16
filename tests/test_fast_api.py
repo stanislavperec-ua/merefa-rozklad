@@ -465,6 +465,37 @@ class FastApiTests(unittest.TestCase):
         night = now.replace(hour=3)
         self.assertFalse(gateway.live_due(interval, night), "серед ночі канал не чіпаємо")
 
+    def test_worker_poke_is_rate_limited(self):
+        """Нагадування воркеру йде не частіше, ніж раз на POKE_INTERVAL, і лише вдень."""
+        calls = []
+        real = gateway.poke_worker
+        gateway.poke_worker = lambda: calls.append(1)
+        gateway.FAST_TOKEN = "секрет-воркера"
+        gateway.poke_state.update(at=None, result=None)
+        try:
+            gateway.maybe_poke_worker()
+            time.sleep(0.2)
+            self.assertEqual(len(calls), 1, "перший раз нагадуємо одразу")
+            gateway.maybe_poke_worker()
+            time.sleep(0.2)
+            self.assertEqual(len(calls), 1, "другий раз зарано")
+
+            gateway.poke_state["at"] = (gateway.datetime.now(gateway.KYIV)
+                                        - gateway.timedelta(hours=1)).isoformat(timespec="seconds")
+            gateway.maybe_poke_worker()
+            time.sleep(0.2)
+            self.assertEqual(len(calls), 2, "через годину нагадуємо знову")
+
+            gateway.FAST_TOKEN = ""
+            gateway.poke_state["at"] = None
+            gateway.maybe_poke_worker()
+            time.sleep(0.2)
+            self.assertEqual(len(calls), 2, "без секрета воркера не турбуємо")
+        finally:
+            gateway.poke_worker = real
+            gateway.FAST_TOKEN = ""
+            gateway.poke_state.update(at=None, result=None)
+
     def test_live_rate_limited(self):
         gateway.live_state["finished"] = gateway.datetime.now(gateway.KYIV).isoformat(timespec="seconds")
         body = self.client.post("/live").get_json()
