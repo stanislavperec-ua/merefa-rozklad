@@ -483,6 +483,29 @@ def poke_worker() -> None:
         result = {"error": str(e)[:160]}
     poke_state.update(at=datetime.now(KYIV).isoformat(timespec="seconds"), result=result)
     log.info("Нагадав воркеру про розклад: %s", str(result)[:200])
+    if not result.get("ok"):
+        fallback_refresh()
+
+
+def fallback_refresh() -> None:
+    """Воркер не впорався: збираємо найближчі дні самотужки.
+
+    Повільно (сайт УЗ обмежує мережу Render), тому беремо лише HORIZON днів, а решту
+    дат зберігає merge_schedule. Це остання лінія оборони, коли не працює ні Cloudflare
+    Cron, ні GitHub Actions.
+    """
+    with state_lock:
+        if state["running"]:
+            return
+    old, _ = fetch_schedule()
+    if not older_than_slot(old):
+        return
+    log.warning("Воркер не зібрав розклад, запускаю давній шлях на %d дн.", HORIZON)
+    with state_lock:
+        state.update(running=True, started=datetime.now(KYIV).isoformat(timespec="seconds"),
+                     finished=None, ok=None, horizon=HORIZON,
+                     message=f"запасна збірка своїми силами ({HORIZON} дн.)")
+    threading.Thread(target=do_refresh, daemon=True).start()
 
 
 def maybe_poke_worker() -> None:

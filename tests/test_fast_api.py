@@ -496,6 +496,43 @@ class FastApiTests(unittest.TestCase):
             gateway.FAST_TOKEN = ""
             gateway.poke_state.update(at=None, result=None)
 
+    def test_fallback_refresh_when_worker_fails(self):
+        """Якщо воркер не зібрав розклад, бот береться сам, але лише коли слот не відпрацьовано."""
+        started = []
+        real_thread = gateway.threading.Thread
+
+        class FakeThread:
+            def __init__(self, target=None, daemon=None):
+                started.append(target)
+
+            def start(self):
+                pass
+
+        gateway.threading.Thread = FakeThread
+        old_stamp = "2020-01-01T06:00:00+02:00"
+        fresh_stamp = gateway.datetime.now(gateway.KYIV).isoformat(timespec="seconds")
+        try:
+            gateway.gh_get_file = lambda path: (({"generated": old_stamp}, "sha")
+                                                if path.endswith("schedule.json") else (None, None))
+            gateway.state.update(running=False)
+            gateway.fallback_refresh()
+            self.assertEqual(len(started), 1, "розклад застарів, збираємо самі")
+
+            gateway.gh_get_file = lambda path: (({"generated": fresh_stamp}, "sha")
+                                                if path.endswith("schedule.json") else (None, None))
+            gateway.state.update(running=False)
+            gateway.fallback_refresh()
+            self.assertEqual(len(started), 1, "слот відпрацьовано, збирати нема чого")
+
+            gateway.gh_get_file = lambda path: (({"generated": old_stamp}, "sha")
+                                                if path.endswith("schedule.json") else (None, None))
+            gateway.state.update(running=True)
+            gateway.fallback_refresh()
+            self.assertEqual(len(started), 1, "збірка вже йде")
+        finally:
+            gateway.threading.Thread = real_thread
+            gateway.state.update(running=False)
+
     def test_live_rate_limited(self):
         gateway.live_state["finished"] = gateway.datetime.now(gateway.KYIV).isoformat(timespec="seconds")
         body = self.client.post("/live").get_json()
