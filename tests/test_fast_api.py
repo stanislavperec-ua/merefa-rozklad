@@ -64,6 +64,8 @@ class FastApiTests(unittest.TestCase):
         gateway.latest_schedule = None
         gateway.state.update(running=False, started=None, finished=None, ok=None,
                              message="тест", generated=None, committed=False, requests=0)
+        gateway.live_state.update(finished=None, ok=None, message="тест", items=0, committed=False)
+        gateway._nums_cache.update(nums=None, at=None)
         # у мережу тести не ходять: звірка з сайтом і GitHub підмінені
         self._saved = (gateway.spot_check, gateway.start_spot_check,
                        gateway.gh_get_file, gateway.gh_put_file)
@@ -362,6 +364,91 @@ class FastApiTests(unittest.TestCase):
         gateway.gh_get_file = lambda path: (None, None)
         empty = self.client.get("/due").get_json()
         self.assertTrue(empty["due"])
+
+    # ── канал УЗ (затримки) ───────────────────────────────
+    def fake_channel(self, items):
+        """Підміна читання каналу: у мережу тести не ходять."""
+        stamp = gateway.datetime.now(gateway.KYIV).isoformat(timespec="seconds")
+        gateway.build_live.collect = lambda **kw: {"generated": stamp, "since": stamp,
+                                                   "channel": "https://t.me/UZprymisky",
+                                                   "items": items, "stats": {"posts_scanned": len(items)}}
+
+    def test_live_commits_new_messages(self):
+        real = gateway.build_live.collect
+        saved = []
+        gateway.GH_TOKEN = "fake"
+        gateway.gh_get_file = lambda path: (({"generated": "2020-01-01T00:00:00+02:00", "items": []}, "sha")
+                                            if path.endswith("live.json") else (None, None))
+        gateway.gh_put_file = lambda path, payload, sha, message: saved.append((path, message))
+        self.fake_channel([{"num": "6701", "kind": "delay", "minutes": 40, "text": "затримка",
+                            "time": "2026-09-16T06:20+03:00", "link": "https://t.me/UZprymisky/1"}])
+        try:
+            body = self.client.post("/live?force=1").get_json()
+            self.assertEqual(body["status"], "ok", body)
+            self.assertTrue(body["committed"])
+            self.assertEqual(body["items"], 1)
+            self.assertEqual(saved[0][0], "live.json")
+            self.assertTrue(saved[0][1].startswith("Live update"))
+        finally:
+            gateway.build_live.collect = real
+            gateway.GH_TOKEN = ""
+
+    def test_live_without_changes_does_not_commit(self):
+        real = gateway.build_live.collect
+        fresh_stamp = gateway.datetime.now(gateway.KYIV).isoformat(timespec="seconds")
+        gateway.GH_TOKEN = "fake"
+        gateway.gh_get_file = lambda path: (({"generated": fresh_stamp, "items": []}, "sha")
+                                            if path.endswith("live.json") else (None, None))
+        gateway.gh_put_file = lambda *a, **kw: self.fail("комітити нема чого")
+        self.fake_channel([])
+        try:
+            body = self.client.post("/live?force=1").get_json()
+            self.assertFalse(body["committed"])
+            self.assertEqual(body["message"], "змін немає")
+        finally:
+            gateway.build_live.collect = real
+            gateway.GH_TOKEN = ""
+
+    def test_live_refreshes_timestamp_when_stale(self):
+        """Щоб у застосунку не здавалося, що канал застиг, позначку часу оновлюємо."""
+        real = gateway.build_live.collect
+        saved = []
+        gateway.GH_TOKEN = "fake"
+        old = (gateway.datetime.now(gateway.KYIV) - gateway.timedelta(hours=5)).isoformat(timespec="seconds")
+        gateway.gh_get_file = lambda path: (({"generated": old, "items": []}, "sha")
+                                            if path.endswith("live.json") else (None, None))
+        gateway.gh_put_file = lambda path, payload, sha, message: saved.append(path)
+        self.fake_channel([])
+        try:
+            body = self.client.post("/live?force=1").get_json()
+            self.assertTrue(body["committed"])
+            self.assertIn("позначку часу", body["message"])
+            self.assertEqual(saved, ["live.json"])
+        finally:
+            gateway.build_live.collect = real
+            gateway.GH_TOKEN = ""
+
+    def test_live_survives_channel_outage(self):
+        real = gateway.build_live.collect
+
+        def boom(**kw):
+            raise gateway.requests.RequestException("t.me недоступний")
+
+        gateway.build_live.collect = boom
+        try:
+            r = self.client.post("/live?force=1")
+            body = r.get_json()
+            self.assertEqual(body["status"], "error")
+            self.assertFalse(body["ok"])
+            self.assertIn("канал недоступний", body["message"])
+        finally:
+            gateway.build_live.collect = real
+
+    def test_live_rate_limited(self):
+        gateway.live_state["finished"] = gateway.datetime.now(gateway.KYIV).isoformat(timespec="seconds")
+        body = self.client.post("/live").get_json()
+        self.assertEqual(body["status"], "too_soon")
+        self.assertGreater(body["wait_seconds"], 0)
 
     def test_unknown_session(self):
         r = self.post("/fast/pages", {"session": "нема", "pages": []})

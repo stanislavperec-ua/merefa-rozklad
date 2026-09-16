@@ -173,6 +173,33 @@ def build_items(posts: list[dict], nums: set[str]) -> list[dict]:
     return items
 
 
+def collect(hours: float = LOOKBACK_HOURS, pages: int = MAX_PAGES,
+            nums: set[str] | None = None, session: requests.Session | None = None,
+            now: datetime | None = None) -> dict:
+    """Збирає оперативні повідомлення каналу і повертає вміст live.json.
+
+    Без читання і запису файлів, щоб цю саму збірку міг робити бот на Render: GitHub
+    Actions за розкладом запускається нерегулярно, а затримки поїздів цінні саме свіжими.
+    """
+    now = now or datetime.now(timezone.utc)
+    since = now - timedelta(hours=hours)
+    session = session or requests.Session()
+    session.headers.setdefault("User-Agent", USER_AGENT)
+    posts, scanned = fetch_recent(session, since, pages)
+    if nums is None:
+        nums, _routes = load_train_nums()
+    items = build_items(posts, nums)
+    log.info("Постів за %.0f год: %d (сторінок %d), про наші поїзди: %d",
+             hours, len(posts), scanned, len(items))
+    return {
+        "generated": now.astimezone(KYIV).isoformat(timespec="seconds"),
+        "since": since.astimezone(KYIV).isoformat(timespec="minutes"),
+        "channel": f"https://t.me/{CHANNEL}",
+        "items": items,
+        "stats": {"posts_scanned": len(posts), "pages": scanned},
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--hours", type=float, default=LOOKBACK_HOURS)
@@ -187,17 +214,13 @@ def main(argv: list[str] | None = None) -> int:
 
     now = datetime.now(timezone.utc)
     since = now - timedelta(hours=args.hours)
-    session = requests.Session()
-    session.headers["User-Agent"] = USER_AGENT
     try:
-        posts, pages = fetch_recent(session, since, args.pages)
+        live = collect(hours=args.hours, pages=args.pages, now=now)
     except requests.RequestException as e:
         log.error("Канал недоступний, live.json не змінено: %s", e)
         return 2
 
-    nums, _routes = load_train_nums()
-    items = build_items(posts, nums)
-    log.info("Постів за %.0f год: %d (сторінок %d), про наші поїзди: %d", args.hours, len(posts), pages, len(items))
+    items = live["items"]
     for it in items:
         log.info("  %s %s %s: %s", it["time"], it["num"], it["kind"], it["text"][:90])
 
@@ -217,13 +240,6 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError:
             pass
 
-    live = {
-        "generated": now.astimezone(KYIV).isoformat(timespec="seconds"),
-        "since": since.astimezone(KYIV).isoformat(timespec="minutes"),
-        "channel": f"https://t.me/{CHANNEL}",
-        "items": items,
-        "stats": {"posts_scanned": len(posts), "pages": pages},
-    }
     with open(LIVE_FILE, "w", encoding="utf-8") as f:
         json.dump(live, f, ensure_ascii=False, indent=1)
         f.write("\n")

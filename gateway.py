@@ -15,6 +15,7 @@
     GET  /fast/state       чого сесії бракує і завдання наступної фази
     POST /fast/finish      зібрати розклад із прийнятих сторінок і закомітити
     GET  /due              чи час оновлювати розклад (слоти 06:00 і 13:00 за Києвом)
+    POST /live             прочитати канал УЗ і оновити live.json (затримки, скасування)
     GET  /status           стан останньої збірки
     GET  /schedule.json    свіжозібраний розклад з пам'яті, без очікування GitHub Pages
 
@@ -45,6 +46,7 @@ import requests
 from urllib.parse import quote
 from flask import Blueprint, Flask, Response, abort, jsonify, request
 
+import build_live
 import build_schedule
 import fastbuild
 import uz
@@ -354,6 +356,95 @@ def public_state() -> dict:
 @gateway_bp.route("/status")
 def status():
     return cors(jsonify(**public_state()))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Оперативні повідомлення каналу УЗ (затримки, скасування)
+# ──────────────────────────────────────────────────────────────────────
+LIVE_MIN_INTERVAL = timedelta(minutes=int(os.environ.get("MIN_LIVE_MINUTES", "10")))
+LIVE_HOURS = float(os.environ.get("LIVE_HOURS", "12"))
+live_state: dict = {"finished": None, "ok": None, "message": "ще не запускалась",
+                    "items": 0, "committed": False}
+live_lock = threading.Lock()
+_nums_cache: dict = {"nums": None, "at": None}
+
+
+def train_nums() -> set[str]:
+    """Номери наших поїздів: потрібні, щоб відібрати з каналу пости саме про них."""
+    with live_lock:
+        cached, at = _nums_cache["nums"], _nums_cache["at"]
+    if cached and at and (datetime.now(KYIV) - at) < timedelta(hours=6):
+        return cached
+    schedule = latest_schedule or fetch_schedule()[0]
+    nums = {t.get("num") for t in (schedule or {}).get("trains", {}).values() if t.get("num")}
+    if not nums:
+        return set(build_live.FALLBACK_NUMS)
+    with live_lock:
+        _nums_cache.update(nums=nums, at=datetime.now(KYIV))
+    return nums
+
+
+@gateway_bp.route("/live", methods=["POST", "GET", "OPTIONS"])
+def live():
+    """Збирає канал УЗ і оновлює live.json.
+
+    Раніше це робив GitHub Actions щопівгодини, але його cron на безкоштовному тарифі
+    пропускає запуски (16.09.2026 не спрацював сім годин поспіль), а затримки поїздів
+    цінні саме свіжими. Тепер бота будить Cloudflare Worker, а канал бот читає сам:
+    Telegram, на відміну від сайту УЗ, доступний з мережі Render.
+    """
+    if request.method == "OPTIONS":
+        return cors(Response("", 204))
+    force = bool(request.args.get("force"))
+    with live_lock:
+        last = live_state.get("finished")
+    if last and not force:
+        try:
+            since = datetime.now(KYIV) - datetime.fromisoformat(last)
+            if since < LIVE_MIN_INTERVAL:
+                return cors(jsonify(status="too_soon",
+                                    wait_seconds=int((LIVE_MIN_INTERVAL - since).total_seconds()),
+                                    **live_state))
+        except ValueError:
+            pass
+    try:
+        fresh = build_live.collect(hours=LIVE_HOURS, nums=train_nums())
+    except Exception as e:  # noqa: BLE001
+        log.warning("Канал УЗ недоступний: %s", e)
+        with live_lock:
+            live_state.update(finished=datetime.now(KYIV).isoformat(timespec="seconds"),
+                              ok=False, message=f"канал недоступний: {str(e)[:120]}")
+        return cors(jsonify(status="error", **live_state))
+
+    committed, message = False, "канал прочитано"
+    if GH_TOKEN:
+        try:
+            old, sha = gh_get_file("live.json")
+        except Exception as e:  # noqa: BLE001
+            log.warning("live.json з GitHub недоступний: %s", e)
+            old, sha = None, None
+        changed = not old or old.get("items") != fresh["items"]
+        # навіть без змін раз на кілька годин оновлюємо позначку часу, щоб у застосунку
+        # не здавалося, що дані застигли
+        stale = True
+        if old and old.get("generated"):
+            try:
+                gen = datetime.fromisoformat(old["generated"])
+                stale = (datetime.now(KYIV) - gen) > timedelta(hours=build_live.REWRITE_AFTER_HOURS)
+            except ValueError:
+                stale = True
+        if changed or stale:
+            stamp = datetime.now(KYIV).strftime("%Y-%m-%d %H:%M")
+            gh_put_file("live.json", fresh, sha, f"Live update (gateway) {stamp}")
+            committed = True
+            message = "оновлено" if changed else "змін немає, оновлено позначку часу"
+        else:
+            message = "змін немає"
+    with live_lock:
+        live_state.update(finished=datetime.now(KYIV).isoformat(timespec="seconds"), ok=True,
+                          message=message, items=len(fresh["items"]), committed=committed)
+    log.info("Канал УЗ: %s, повідомлень про наші поїзди %d", message, len(fresh["items"]))
+    return cors(jsonify(status="ok", **live_state))
 
 
 # ──────────────────────────────────────────────────────────────────────
