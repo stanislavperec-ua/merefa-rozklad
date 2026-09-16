@@ -24,6 +24,7 @@ from flask import Flask, abort, request
 from telebot.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 import uz
+import gateway
 from gateway import gateway_bp
 
 log = logging.getLogger("bot")
@@ -329,6 +330,13 @@ def fallback(message):
 # ──────────────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
+    # UptimeRobot стукає сюди кожні 5 хвилин, щоб сервіс не засинав. Заразом це наш
+    # найнадійніший будильник: раз на чверть години він запускає читання каналу УЗ
+    # (cron GitHub Actions пропускає запуски, а Cloudflare виконує свій, коли вирішить).
+    try:
+        gateway.maybe_collect_live()
+    except Exception:  # noqa: BLE001
+        log.exception("Не вдалося запустити читання каналу")
     return "OK", 200
 
 

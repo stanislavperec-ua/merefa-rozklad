@@ -444,6 +444,27 @@ class FastApiTests(unittest.TestCase):
         finally:
             gateway.build_live.collect = real
 
+    def test_live_alarm_from_health_check(self):
+        """Пінг UptimeRobot раз на чверть години запускає читання каналу."""
+        now = gateway.datetime.now(gateway.KYIV).replace(hour=12)
+        interval = gateway.timedelta(minutes=25)
+
+        gateway.live_state.update(running=False, finished=None)
+        self.assertTrue(gateway.live_due(interval, now), "перший раз читаємо одразу")
+
+        gateway.live_state["finished"] = (now - gateway.timedelta(minutes=5)).isoformat(timespec="seconds")
+        self.assertFalse(gateway.live_due(interval, now), "щойно читали")
+
+        gateway.live_state["finished"] = (now - gateway.timedelta(minutes=40)).isoformat(timespec="seconds")
+        self.assertTrue(gateway.live_due(interval, now))
+
+        gateway.live_state["running"] = True
+        self.assertFalse(gateway.live_due(interval, now), "уже читаємо")
+        gateway.live_state["running"] = False
+
+        night = now.replace(hour=3)
+        self.assertFalse(gateway.live_due(interval, night), "серед ночі канал не чіпаємо")
+
     def test_live_rate_limited(self):
         gateway.live_state["finished"] = gateway.datetime.now(gateway.KYIV).isoformat(timespec="seconds")
         body = self.client.post("/live").get_json()

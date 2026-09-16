@@ -363,9 +363,11 @@ def status():
 # Оперативні повідомлення каналу УЗ (затримки, скасування)
 # ──────────────────────────────────────────────────────────────────────
 LIVE_MIN_INTERVAL = timedelta(minutes=int(os.environ.get("MIN_LIVE_MINUTES", "10")))
+LIVE_AUTO_INTERVAL = timedelta(minutes=int(os.environ.get("LIVE_AUTO_MINUTES", "25")))
 LIVE_HOURS = float(os.environ.get("LIVE_HOURS", "12"))
-live_state: dict = {"finished": None, "ok": None, "message": "ще не запускалась",
-                    "items": 0, "committed": False}
+LIVE_DAY_FROM, LIVE_DAY_TO = 5, 0        # читаємо канал з 05:00 до 00:59 за Києвом
+live_state: dict = {"running": False, "finished": None, "ok": None,
+                    "message": "ще не запускалась", "items": 0, "committed": False}
 live_lock = threading.Lock()
 _nums_cache: dict = {"nums": None, "at": None}
 
@@ -385,37 +387,16 @@ def train_nums() -> set[str]:
     return nums
 
 
-@gateway_bp.route("/live", methods=["POST", "GET", "OPTIONS"])
-def live():
-    """Збирає канал УЗ і оновлює live.json.
-
-    Раніше це робив GitHub Actions щопівгодини, але його cron на безкоштовному тарифі
-    пропускає запуски (16.09.2026 не спрацював сім годин поспіль), а затримки поїздів
-    цінні саме свіжими. Тепер бота будить Cloudflare Worker, а канал бот читає сам:
-    Telegram, на відміну від сайту УЗ, доступний з мережі Render.
-    """
-    if request.method == "OPTIONS":
-        return cors(Response("", 204))
-    force = bool(request.args.get("force"))
-    with live_lock:
-        last = live_state.get("finished")
-    if last and not force:
-        try:
-            since = datetime.now(KYIV) - datetime.fromisoformat(last)
-            if since < LIVE_MIN_INTERVAL:
-                return cors(jsonify(status="too_soon",
-                                    wait_seconds=int((LIVE_MIN_INTERVAL - since).total_seconds()),
-                                    **live_state))
-        except ValueError:
-            pass
+def do_live() -> dict:
+    """Читає канал і за потреби комітить live.json. Повертає стан для відповіді."""
     try:
         fresh = build_live.collect(hours=LIVE_HOURS, nums=train_nums())
     except Exception as e:  # noqa: BLE001
         log.warning("Канал УЗ недоступний: %s", e)
         with live_lock:
-            live_state.update(finished=datetime.now(KYIV).isoformat(timespec="seconds"),
+            live_state.update(running=False, finished=datetime.now(KYIV).isoformat(timespec="seconds"),
                               ok=False, message=f"канал недоступний: {str(e)[:120]}")
-        return cors(jsonify(status="error", **live_state))
+            return dict(live_state)
 
     committed, message = False, "канал прочитано"
     if GH_TOKEN:
@@ -442,10 +423,76 @@ def live():
         else:
             message = "змін немає"
     with live_lock:
-        live_state.update(finished=datetime.now(KYIV).isoformat(timespec="seconds"), ok=True,
-                          message=message, items=len(fresh["items"]), committed=committed)
+        live_state.update(running=False, finished=datetime.now(KYIV).isoformat(timespec="seconds"),
+                          ok=True, message=message, items=len(fresh["items"]), committed=committed)
+        state_copy = dict(live_state)
     log.info("Канал УЗ: %s, повідомлень про наші поїзди %d", message, len(fresh["items"]))
-    return cors(jsonify(status="ok", **live_state))
+    return state_copy
+
+
+def live_due(interval: timedelta, now: datetime | None = None) -> bool:
+    """Чи час читати канал: не частіше заданого інтервалу і не серед ночі."""
+    now = now or datetime.now(KYIV)
+    if not (LIVE_DAY_FROM <= now.hour or now.hour <= LIVE_DAY_TO):
+        return False
+    with live_lock:
+        if live_state.get("running"):
+            return False
+        last = live_state.get("finished")
+    if not last:
+        return True
+    try:
+        return (now - datetime.fromisoformat(last)) >= interval
+    except ValueError:
+        return True
+
+
+def maybe_collect_live() -> None:
+    """Будильник із health-check: UptimeRobot стукає в бота кожні 5 хвилин.
+
+    Це найнадійніший годинник, який у нас є: cron GitHub Actions пропускає запуски, а
+    Cloudflare Cron Trigger виконується коли і де вирішить сам. Пінг же приходить завжди,
+    тож раз на LIVE_AUTO_MINUTES він і запускає читання каналу у фоні.
+    """
+    if not live_due(LIVE_AUTO_INTERVAL):
+        return
+    with live_lock:
+        if live_state.get("running"):
+            return
+        live_state["running"] = True
+    threading.Thread(target=do_live, daemon=True).start()
+
+
+@gateway_bp.route("/live", methods=["POST", "GET", "OPTIONS"])
+def live():
+    """Збирає канал УЗ і оновлює live.json.
+
+    Раніше це робив GitHub Actions щопівгодини, але його cron на безкоштовному тарифі
+    пропускає запуски (16.09.2026 не спрацював сім годин поспіль), а затримки поїздів
+    цінні саме свіжими. Тепер бота будить Cloudflare Worker, а канал бот читає сам:
+    Telegram, на відміну від сайту УЗ, доступний з мережі Render.
+    """
+    if request.method == "OPTIONS":
+        return cors(Response("", 204))
+    force = bool(request.args.get("force"))
+    with live_lock:
+        last = live_state.get("finished")
+        busy = live_state.get("running")
+    if busy:
+        return cors(jsonify(status="running", **live_state))
+    if last and not force:
+        try:
+            since = datetime.now(KYIV) - datetime.fromisoformat(last)
+            if since < LIVE_MIN_INTERVAL:
+                return cors(jsonify(status="too_soon",
+                                    wait_seconds=int((LIVE_MIN_INTERVAL - since).total_seconds()),
+                                    **live_state))
+        except ValueError:
+            pass
+    with live_lock:
+        live_state["running"] = True
+    result = do_live()
+    return cors(jsonify(status="ok" if result.get("ok") else "error", **result))
 
 
 # ──────────────────────────────────────────────────────────────────────
