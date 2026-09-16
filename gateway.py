@@ -135,7 +135,8 @@ def whoami():
                   "github_token": bool(GH_TOKEN),
                   "worker_token": bool(FAST_TOKEN),    # чи впізнаємо Cloudflare Worker
                   "slots": SLOT_HOURS,
-                  "fast_sessions": len(fast_sessions)}
+                  "fast_sessions": len(fast_sessions),
+                  "live": {k: live_state.get(k) for k in ("finished", "ok", "items", "message")}}
     try:
         r = requests.get("https://ipinfo.io/json", timeout=(10, 20))
         data = r.json()
