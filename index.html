@@ -904,9 +904,9 @@ function commonTimes(was, now) {
   return null;
 }
 
-function diffFromToday(key) {
-  if (!S?.days || key === todayKey()) return null;
-  const base = S.days[todayKey()], target = S.days[key];
+function diffBetween(fromKey, toKey) {
+  if (!S?.days || fromKey === toKey) return null;
+  const base = S.days[fromKey], target = S.days[toKey];
   if (!base || !target) return null;              // порівнюємо лише перевірені на сайті дати
   const byNum = tids => {
     const map = new Map();
@@ -925,11 +925,42 @@ function diffFromToday(key) {
   if (!gone.length && !added.length && !moved.length) return null;
   return { gone, added, moved, count: gone.length + added.length + moved.length };
 }
+const diffFromToday = key => diffBetween(todayKey(), key);
 
-// Пояснення УЗ до поїзда: лише повідомлення, чинне на обрану дату. Прострочене не годиться:
-// у 7001 висіло «з 07 по 16 вересня ВІДМІНЕНО» там, де поїзд якраз починає курсувати.
+// Різниця словами: «не курсує №6678 · інший час у №6525»
+function diffWords(diff) {
+  const nums = arr => arr.map(x => "№" + x.num).join(", ");
+  const parts = [];
+  if (diff.gone.length)  parts.push(`${diff.gone.length === 1 ? "не курсує" : "не курсують"} ${nums(diff.gone)}`);
+  if (diff.moved.length) parts.push(`інший час у ${nums(diff.moved)}`);
+  if (diff.added.length) parts.push(`${diff.added.length === 1 ? "з'являється" : "з'являються"} ${nums(diff.added)}`);
+  return parts.join(" · ");
+}
+
+// Найближча дата, коли розклад стане іншим. Без цього шапка писала «змін немає» саме тоді,
+// коли в рядку поїзда вже висіла позначка «Зміни» з приміткою УЗ про майбутню відміну.
+let changeCache = { stamp: null, map: new Map() };
+function nextChange(key) {
+  if (!S?.days?.[key]) return null;
+  if (changeCache.stamp !== S.generated) changeCache = { stamp: S.generated, map: new Map() };
+  if (changeCache.map.has(key)) return changeCache.map.get(key);
+  let found = null;
+  for (const day of Object.keys(S.days).sort()) {
+    if (day <= key) continue;
+    const diff = diffBetween(key, day);
+    if (diff) { found = { key: day, diff }; break; }
+  }
+  changeCache.map.set(key, found);
+  return found;
+}
+
+// Примітка УЗ, чинна на обрану дату. Прострочена не годиться: у 7001 висіло
+// «з 07 по 16 вересня ВІДМІНЕНО» там, де поїзд якраз починає курсувати.
+const activeNote = (train, key) => (train.notes || []).find(n => !n.to || n.to >= key) || null;
+
+// Те саме пояснення словами, для банера і для вкладки «Зміни».
 function noteFor(train, key) {
-  const note = (train.notes || []).find(n => !n.to || n.to >= key);
+  const note = activeNote(train, key);
   if (note) return note.text;
   // Той самий номер може мати кілька tid (старий і новий), а повідомлення УЗ висить на
   // одному з них: у 6525 пояснення «змінює графік руху» лежить на записі, що вже закінчився
@@ -984,7 +1015,9 @@ function renderBanner(key, res) {
   const delays = isToday
     ? res.list.filter(t => t.status === "ok" && t.live?.kind === "delay" && ageHours(t.live.time) < LIVE_FRESH_H)
     : [];
-  let cls = "ok", html = "<b>✓</b> Змін немає. Розклад актуальний.";
+  // «Змін немає» звучало як обіцянка на всі дні, хоча стосувалося лише обраної
+  const allGood = isToday ? "Сьогодні все за розкладом" : `На ${shortDate(key)} усе за розкладом`;
+  let cls = "ok", html = `<b>✓</b> ${allGood}.`;
   if (offline) {
     cls = "warn"; html = `<b>⚠ Офлайн.</b> Показано збережений розклад від ${fmtStamp(S.generated)}.`;
   } else if (cancelled.length) {
@@ -997,13 +1030,15 @@ function renderBanner(key, res) {
   }
   // На майбутню дату головне не «змін немає», а те, чим вона відрізняється від сьогодні
   const diff = diffFromToday(key);
+  const soon = diff ? null : nextChange(key);
   if (diff && !offline) {
-    const parts = [];
-    if (diff.gone.length) parts.push(`не курсують ${diff.gone.map(t => "№" + t.num).join(", ")}`);
-    if (diff.moved.length) parts.push(`інший час у ${diff.moved.map(m => "№" + m.num).join(", ")}`);
-    if (diff.added.length) parts.push(`з'являються ${diff.added.map(t => "№" + t.num).join(", ")}`);
     cls = "info";
-    html = `<b>🔄</b> Порівняно з сьогодні: ${parts.join(" · ")}`;
+    html = `<b>🔄</b> Порівняно з сьогодні: ${diffWords(diff)}`;
+  } else if (soon && !offline && cls === "ok") {
+    // Відміну УЗ оголошує заздалегідь, тож кажемо, з якої саме дати вона діє: інакше шапка
+    // сперечається з позначкою «Зміни», яка вже висить у рядку поїзда
+    cls = "info";
+    html = `<b>ℹ</b> ${allGood}. З ${shortDate(soon.key)}: ${diffWords(soon.diff)}`;
   }
   alertDiv.className = cls; alertEl.innerHTML = html;
 
@@ -1012,8 +1047,14 @@ function renderBanner(key, res) {
   statusEl.className = offline ? "error" : schedAge > 36 ? "stale" : "fresh";
 
   const cnt = document.getElementById("chg-cnt");
-  // поїзди, що більше не курсують, уже пораховані в cancelled (вони в переліку червоні)
-  const n = cancelled.length + delays.length + (diff ? diff.moved.length + diff.added.length : 0);
+  // рахуємо номери, а не рядки: поїзд зі скасуванням і приміткою УЗ це один привід зазирнути
+  // у вкладку «Зміни», а не два (поїзди, що більше не курсують, уже всередині cancelled)
+  const marked = new Set();
+  cancelled.forEach(t => marked.add(t.num));
+  delays.forEach(t => marked.add(t.num));
+  res.list.forEach(t => { if (activeNote(t, key)) marked.add(t.num); });
+  if (diff) [...diff.moved, ...diff.added].forEach(t => marked.add(t.num));
+  const n = marked.size;
   cnt.hidden = n === 0; cnt.textContent = n;
 }
 
@@ -1021,7 +1062,7 @@ function renderBanner(key, res) {
 function timeHtml(t, m) {
   return `<span class="t-time${isCancelled(t) ? " cancelled" : ""}">${fmt(m)}</span>`;
 }
-function noteHtml(t) {
+function noteHtml(t, key) {
   if (t.status === "cancelled") return `<span class="badge badge-cancel">Скасовано</span>`;
   if (t.status === "gone") return `<span class="badge badge-cancel">Не курсує</span>`;
   if (t.status === "off") return `<span class="badge badge-off">Не курсує</span>`;
@@ -1032,7 +1073,7 @@ function noteHtml(t) {
     if (k === "change") return `<span class="badge badge-change">Зміни</span>`;
     if (k === "resume") return `<span class="badge badge-ok">За графіком</span>`;
   }
-  if (t.notes?.length) return `<span class="badge badge-change">ℹ Зміни</span>`;
+  if (activeNote(t, key)) return `<span class="badge badge-change">ℹ Зміни</span>`;
   return `<span class="t-note-dash">·</span>`;
 }
 function rowHtml(t, cells, opts) {
@@ -1043,10 +1084,10 @@ function rowHtml(t, cells, opts) {
     opts.next ? "next" : ""
   ].filter(Boolean).join(" ");
   let html = `<tr class="${cls}" onclick="toggleRow('${t.tid}')">${cells.map(c => `<td>${c}</td>`).join("")}</tr>`;
-  if (expanded === t.tid) html += detailsRow(t, cells.length, opts.curSid);
+  if (expanded === t.tid) html += detailsRow(t, cells.length, opts.curSid, opts.key);
   return html;
 }
-function detailsRow(t, span, curSid) {
+function detailsRow(t, span, curSid, key) {
   const order = t.dir === "k" ? [...STATIONS].reverse() : STATIONS;   // у порядку прямування
   // Обидві колонки як на сайті УЗ: прибуття / відправлення (на кінцевих одна з них відсутня)
   const stops = order.map(st => {
@@ -1058,7 +1099,9 @@ function detailsRow(t, span, curSid) {
   }).join("");
   let extra = "";
   (t.notes || []).forEach(n => {
-    extra += `<div class="d-note">📋 ${esc(n.text)}${n.from ? ` <span class="chg-meta">(діє ${shortDate(n.from)}–${shortDate(n.to || "")})</span>` : ""}</div>`;
+    const past = Boolean(n.to && n.to < key);
+    const when = past ? `втратило чинність ${shortDate(n.to)}` : n.to ? `чинне до ${shortDate(n.to)}` : "чинне";
+    extra += `<div class="d-note"${past ? ' style="opacity:.55"' : ""}>📋 ${esc(n.text)} <span class="chg-meta">(${when})</span></div>`;
   });
   if (t.note && t.status !== "ok") extra += `<div class="d-note">${esc(t.note)}</div>`;
   if (t.live) extra += `<div class="d-live">📡 ${esc(t.live.time.slice(11,16))} · ${esc(t.live.text)}</div>`;
@@ -1122,8 +1165,8 @@ function renderStation(key, res) {
         timeHtml(t, t.dep),
         `<span class="t-num">${esc(t.num)}</span><br><span class="${dir === "m" ? "t-sub-green" : "t-sub-blue"}">${esc(sub)}</span>`,
         timeHtml(t, t.end),
-        noteHtml(t)
-      ], { past: markPast && t.status === "ok" && t.dep < nm, next: next && next.tid === t.tid, curSid: sid });
+        noteHtml(t, key)
+      ], { past: markPast && t.status === "ok" && t.dep < nm, next: next && next.tid === t.tid, curSid: sid, key });
     });
     html += `</tbody></table></div>`;
   };
@@ -1175,8 +1218,8 @@ function renderRoute(key, res) {
       timeHtml(t, t.dep),
       timeHtml(t, t.arr),
       `<span class="t-num">${esc(t.num)}</span> <span class="t-dur">${dur(t.arr - t.dep)}</span><br><span class="${going ? "t-sub-green" : "t-sub-blue"}">${esc(going ? t.to : t.from)}</span>`,
-      noteHtml(t)
-    ], { past: markPast && t.status === "ok" && t.dep < nm, next: next && next.tid === t.tid, curSid: a });
+      noteHtml(t, key)
+    ], { past: markPast && t.status === "ok" && t.dep < nm, next: next && next.tid === t.tid, curSid: a, key });
   });
   html += `</tbody></table></div>`;
   return html;
