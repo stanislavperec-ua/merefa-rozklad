@@ -1,6 +1,6 @@
 {
  "version": 2,
- "generated": "2026-09-25T06:00:39+03:00",
+ "generated": "2026-09-25T13:00:38+03:00",
  "source": "https://swrailway.gov.ua/timetable/eltrain/",
  "horizon": {
   "from": "2026-09-25",
@@ -4291,7 +4291,7 @@
   }
  },
  "stats": {
-  "requests": 64,
+  "requests": 70,
   "skipped_days": 0,
   "busy_hits": 0,
   "trains": 26,
