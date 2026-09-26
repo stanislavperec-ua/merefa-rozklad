@@ -1,6 +1,6 @@
 {
  "version": 2,
- "generated": "2026-09-26T06:01:16+03:00",
+ "generated": "2026-09-26T13:01:14+03:00",
  "source": "https://swrailway.gov.ua/timetable/eltrain/",
  "horizon": {
   "from": "2026-09-26",
@@ -4291,14 +4291,12 @@
   }
  },
  "stats": {
-  "requests": 75,
+  "requests": 63,
   "skipped_days": 0,
   "busy_hits": 0,
   "trains": 26,
   "route": "Mini App (телефон користувача)",
-  "errors": [
-   "tid=30739 (6856): сторінку поїзда 30739 телефон не передав"
-  ],
+  "errors": [],
   "source": "mini app"
  }
 }
