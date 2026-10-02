@@ -1,6 +1,6 @@
 {
  "version": 2,
- "generated": "2026-10-02T06:00:44+03:00",
+ "generated": "2026-10-02T13:00:47+03:00",
  "source": "https://swrailway.gov.ua/timetable/eltrain/",
  "horizon": {
   "from": "2026-10-02",
@@ -4291,15 +4291,12 @@
   }
  },
  "stats": {
-  "requests": 70,
+  "requests": 64,
   "skipped_days": 0,
   "busy_hits": 0,
   "trains": 26,
   "route": "Mini App (телефон користувача)",
-  "errors": [
-   "tid=29737 (6693): сторінку поїзда 29737 телефон не передав",
-   "tid=30718 (6697): сторінку поїзда 30718 телефон не передав"
-  ],
+  "errors": [],
   "source": "mini app"
  }
 }
