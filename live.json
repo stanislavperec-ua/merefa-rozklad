@@ -1,6 +1,6 @@
 {
- "generated": "2026-10-04T09:00:18+03:00",
- "since": "2026-10-03T21:00+03:00",
+ "generated": "2026-10-04T12:00:15+03:00",
+ "since": "2026-10-04T00:00+03:00",
  "channel": "https://t.me/UZprymisky",
  "items": [
   {
@@ -13,7 +13,7 @@
   }
  ],
  "stats": {
-  "posts_scanned": 48,
-  "pages": 3
+  "posts_scanned": 80,
+  "pages": 5
  }
 }
