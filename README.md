@@ -15,11 +15,12 @@ Mini App, кнопка ↻ (телефон)          ──► те саме, к
                           │
                           ▼
                 Render (bot.py + gateway.py): розбирає сторінки, збирає schedule.json,
-                          │                   комітить у GitHub, відповідає в Telegram
+                          │                   читає канал УЗ (live.json), комітить
+                          │                   у GitHub через GH_TOKEN, відповідає в Telegram
                           ▼
                 GitHub Pages: index.html читає schedule.json + live.json
                           ▲
-GitHub Actions (щопівгодини) ──► live.json (канал УЗ) і запасний шлях для розкладу
+GitHub Actions (щопівгодини) ──► запасний шлях: live.json і розклад
 ```
 
 Розклад оновлюється у слоти **06:00 і 13:00 за Києвом**. Сторінки з сайту УЗ завжди качає
@@ -65,9 +66,9 @@ swrailway.gov.ua
 Cloudflare Worker: качає сторінки сам (Cron Trigger) і віддає /fetch тим,
         │          хто просить (Mini App, бот, ПК)
         ▼
-бот на Render: розбирає сторінки, збирає розклад, комітить через GitHub API
-        ▲
-GitHub Actions: live.json щопівгодини + запасний шлях для розкладу
+бот на Render: розбирає сторінки, збирає розклад і live.json, комітить через
+        ▲      GitHub API (токен GH_TOKEN)
+GitHub Actions: запасний шлях для live.json і розкладу
 ```
 
 **Чому саме так.** Cloudflare виконує воркер поруч із тим, хто його викликав. З раннера
@@ -212,8 +213,19 @@ Mini App                              бот (gateway.py + fastbuild.py)
    Start with Hello World → Deploy → Edit code → вставити `worker.js` → Deploy.
    Адреса вже прописана в `uz.GATEWAYS`; якщо створите свій, замініть її там.
 2. **Токен для бота.** https://dashboard.render.com → merefa-rozklad → Environment →
-   `GH_TOKEN` = fine-grained token GitHub з правом Contents: Read and write.
-   Потрібен лише для кнопки ↻; автоматичні оновлення від нього не залежать.
+   `GH_TOKEN` = fine-grained token GitHub (назва `merefa-gateway`) з доступом лише до
+   цього репозиторію і правом Contents: Read and write.
+   Через нього бот комітить **усі** оновлення: розклад (`schedule.json`, `trains_cache.json`)
+   і затримки (`live.json`), як за розкладом, так і за кнопкою ↻. Без робочого токена
+   розклад у застосунку застигає: запасний шлях GitHub Actions теж збирає його через бота.
+   `live.json` тоді оновлює лише GitHub Actions своїм вбудованим токеном, нерегулярно.
+
+   **Строк дії.** Токен має дату завершення; GitHub попереджає листом за 7 днів. Порядок
+   перевипуску: лист → Regenerate token (права і репозиторій лишаються ті самі, строк
+   краще ставити якнайдовший) → одразу скопіювати новий токен, бо старий після перевипуску
+   перестає діяти → Render → Environment → `GH_TOKEN` → вставити → Save and deploy.
+   Перевірка: протягом пів години в репозиторії з'являється коміт `Live update (gateway)`.
+   Краще не робити цього близько 06:00 і 13:00, коли збирається розклад.
 
 Запасний шлях, якщо все впаде: `update_schedule.cmd` на ПК в Україні (прямий доступ до сайту УЗ).
 
