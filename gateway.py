@@ -72,6 +72,9 @@ FAST_HORIZON = int(os.environ.get("FAST_HORIZON_DAYS", "14"))  # кнопка: �
 # графіка заздалегідь, і чим далі видно, тим більше таких змін застосунок покаже одразу.
 CRON_HORIZON = int(os.environ.get("CRON_HORIZON_DAYS", "30"))
 MIN_INTERVAL = timedelta(minutes=int(os.environ.get("MIN_REFRESH_MINUTES", "5")))
+# Через скільки вважати збірку завислою: прапорець running знімає той, хто збирає, тож
+# будь-яка несподіванка лишала б його піднятим до перезапуску сервісу
+STUCK_BUILD = timedelta(minutes=int(os.environ.get("BUILD_STUCK_MINUTES", "45")))
 MAX_BODY = 12 * 1024 * 1024                          # більше сторінки розкладу не важать
 TIMEOUT = (15, 60)
 USER_AGENT = uz.USER_AGENT
@@ -310,6 +313,33 @@ def finish_state(ok: bool, message: str, schedule: dict | None = None, committed
                      requests=(schedule or {}).get("stats", {}).get("requests", 0))
 
 
+def stuck_since(started: str | None, limit: timedelta, now: datetime | None = None) -> bool:
+    """Чи висить прапорець довше розумного часу: потік міг не стартувати або загинути."""
+    if not started:
+        return True
+    try:
+        return (now or datetime.now(KYIV)) - datetime.fromisoformat(started) > limit
+    except ValueError:
+        return True
+
+
+def build_busy(now: datetime | None = None) -> bool:
+    """Чи справді триває збірка розкладу.
+
+    Прапорець знімає той, хто збирає, тож зависання лишало б його піднятим, і жоден шлях
+    оновлення (кнопка, воркер, запасна збірка) не спрацював би до перезапуску сервісу.
+    """
+    with state_lock:
+        if not state["running"]:
+            return False
+        if not stuck_since(state.get("started"), STUCK_BUILD, now):
+            return True
+        log.warning("Збірка висить з %s, знімаю прапорець", state.get("started"))
+        state.update(running=False, finished=datetime.now(KYIV).isoformat(timespec="seconds"),
+                     ok=False, message="збірка не завершилася, прапорець знято")
+        return False
+
+
 def do_refresh() -> None:
     """Збирає розклад і зберігає його в GitHub. Прапорець running уже виставлено у refresh()."""
     try:
@@ -331,6 +361,8 @@ def do_refresh() -> None:
 def refresh():
     if request.method == "OPTIONS":
         return cors(Response("", 204))
+    if build_busy():
+        return cors(jsonify(status="running", **public_state()))
     with state_lock:
         if state["running"]:
             return cors(jsonify(status="running", **public_state()))
@@ -370,7 +402,8 @@ LIVE_MIN_INTERVAL = timedelta(minutes=int(os.environ.get("MIN_LIVE_MINUTES", "10
 LIVE_AUTO_INTERVAL = timedelta(minutes=int(os.environ.get("LIVE_AUTO_MINUTES", "25")))
 LIVE_HOURS = float(os.environ.get("LIVE_HOURS", "12"))
 LIVE_DAY_FROM, LIVE_DAY_TO = 5, 0        # читаємо канал з 05:00 до 00:59 за Києвом
-live_state: dict = {"running": False, "finished": None, "ok": None,
+STUCK_LIVE = timedelta(minutes=int(os.environ.get("LIVE_STUCK_MINUTES", "15")))
+live_state: dict = {"running": False, "started": None, "finished": None, "ok": None,
                     "message": "ще не запускалась", "items": 0, "committed": False}
 live_lock = threading.Lock()
 _nums_cache: dict = {"nums": None, "at": None}
@@ -448,14 +481,41 @@ def do_live() -> dict:
     return state_copy
 
 
+def live_busy(now: datetime | None = None) -> bool:
+    """Чи справді триває читання каналу; зависле значення прапорця знімаємо (див. build_busy)."""
+    with live_lock:
+        if not live_state.get("running"):
+            return False
+        if not stuck_since(live_state.get("started"), STUCK_LIVE, now):
+            return True
+        log.warning("Читання каналу висить з %s, знімаю прапорець", live_state.get("started"))
+        live_state.update(running=False, ok=False, message="читання не завершилося, прапорець знято")
+        return False
+
+
+def start_live() -> bool:
+    """Піднімає прапорець і читає канал у фоні. False, якщо читання вже триває."""
+    with live_lock:
+        if live_state.get("running"):
+            return False
+        live_state.update(running=True, started=datetime.now(KYIV).isoformat(timespec="seconds"))
+    try:
+        threading.Thread(target=do_live, daemon=True).start()
+    except Exception:  # noqa: BLE001
+        with live_lock:
+            live_state["running"] = False
+        raise
+    return True
+
+
 def live_due(interval: timedelta, now: datetime | None = None) -> bool:
     """Чи час читати канал: не частіше заданого інтервалу і не серед ночі."""
     now = now or datetime.now(KYIV)
     if not (LIVE_DAY_FROM <= now.hour or now.hour <= LIVE_DAY_TO):
         return False
+    if live_busy(now):
+        return False
     with live_lock:
-        if live_state.get("running"):
-            return False
         last = live_state.get("finished")
     if not last:
         return True
@@ -474,11 +534,7 @@ def maybe_collect_live() -> None:
     """
     if not live_due(LIVE_AUTO_INTERVAL):
         return
-    with live_lock:
-        if live_state.get("running"):
-            return
-        live_state["running"] = True
-    threading.Thread(target=do_live, daemon=True).start()
+    start_live()
 
 
 def poke_worker() -> None:
@@ -508,9 +564,8 @@ def fallback_refresh() -> None:
     дат зберігає merge_schedule. Це остання лінія оборони, коли не працює ні Cloudflare
     Cron, ні GitHub Actions.
     """
-    with state_lock:
-        if state["running"]:
-            return
+    if build_busy():
+        return
     old, _ = fetch_schedule()
     if not older_than_slot(old):
         return
@@ -552,11 +607,10 @@ def live():
     if request.method == "OPTIONS":
         return cors(Response("", 204))
     force = bool(request.args.get("force"))
+    if live_busy():
+        return cors(jsonify(status="running", **live_state))
     with live_lock:
         last = live_state.get("finished")
-        busy = live_state.get("running")
-    if busy:
-        return cors(jsonify(status="running", **live_state))
     if last and not force:
         try:
             since = datetime.now(KYIV) - datetime.fromisoformat(last)
@@ -567,8 +621,12 @@ def live():
         except ValueError:
             pass
     with live_lock:
-        live_state["running"] = True
-    result = do_live()
+        live_state.update(running=True, started=datetime.now(KYIV).isoformat(timespec="seconds"))
+    try:
+        result = do_live()
+    finally:            # do_live знімає прапорець сам, це страховка на випадок винятку
+        with live_lock:
+            live_state["running"] = False
     return cors(jsonify(status="ok" if result.get("ok") else "error", **result))
 
 
@@ -729,9 +787,8 @@ def fast_start():
     if request.method == "OPTIONS":
         return cors(Response("", 204))
     data = body_json()
-    with state_lock:
-        if state["running"]:
-            return cors(jsonify(status="running", **public_state()))
+    if build_busy():
+        return cors(jsonify(status="running", **public_state()))
     wait = 0 if data.get("force") else seconds_to_wait()
     if wait:
         return cors(jsonify(status="too_soon", wait_seconds=wait, **public_state()))
@@ -819,6 +876,8 @@ def fast_finish():
         return cors(Response("", 204))
     data = body_json()
     session = fast_sessions.get(str(data.get("session") or ""))
+    if build_busy():
+        return cors(jsonify(status="running", **public_state()))
     with state_lock:
         if state["running"]:
             return cors(jsonify(status="running", **public_state()))

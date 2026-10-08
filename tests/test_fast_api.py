@@ -64,7 +64,8 @@ class FastApiTests(unittest.TestCase):
         gateway.latest_schedule = None
         gateway.state.update(running=False, started=None, finished=None, ok=None,
                              message="тест", generated=None, committed=False, requests=0)
-        gateway.live_state.update(finished=None, ok=None, message="тест", items=0, committed=False)
+        gateway.live_state.update(running=False, started=None, finished=None, ok=None,
+                                  message="тест", items=0, committed=False)
         gateway._nums_cache.update(nums=None, at=None)
         # у мережу тести не ходять: звірка з сайтом і GitHub підмінені
         self._saved = (gateway.spot_check, gateway.start_spot_check,
@@ -476,6 +477,65 @@ class FastApiTests(unittest.TestCase):
             gateway.build_live.collect, gateway.gh_get_file, gateway.gh_put_file = real
             gateway.GH_TOKEN = ""
 
+    def test_stuck_live_flag_is_released(self):
+        """Зависле читання каналу не повинно глушити будильник до перезапуску сервісу."""
+        now = gateway.datetime.now(gateway.KYIV).replace(hour=12)
+        interval = gateway.timedelta(minutes=25)
+        gateway.live_state.update(running=True, finished=None,
+                                  started=(now - gateway.timedelta(minutes=3)).isoformat(timespec="seconds"))
+        self.assertTrue(gateway.live_busy(now), "читання щойно почалося")
+        self.assertFalse(gateway.live_due(interval, now))
+
+        gateway.live_state["started"] = (now - gateway.timedelta(hours=2)).isoformat(timespec="seconds")
+        self.assertFalse(gateway.live_busy(now), "зависле читання більше не блокує")
+        self.assertFalse(gateway.live_state["running"], "прапорець має зніматися")
+        self.assertTrue(gateway.live_due(interval, now), "наступне читання має запуститися")
+
+    def test_live_flag_released_when_thread_fails(self):
+        """Потік не стартував: прапорець знімається, наступна спроба проходить."""
+        real = gateway.threading.Thread
+        started = []
+
+        class Refusing(real):
+            def start(self):
+                raise RuntimeError("потік не стартував")
+
+        class Noop(real):
+            def start(self):
+                started.append(True)
+
+        gateway.live_state.update(running=False, started=None)
+        gateway.threading.Thread = Refusing
+        try:
+            with self.assertRaises(RuntimeError):
+                gateway.start_live()
+            self.assertFalse(gateway.live_state["running"], "прапорець має зніматися")
+            gateway.threading.Thread = Noop
+            self.assertTrue(gateway.start_live(), "наступне читання має запуститися")
+            self.assertEqual(started, [True])
+            self.assertFalse(gateway.start_live(), "поки читання триває, другий запуск зайвий")
+        finally:
+            gateway.threading.Thread = real
+            gateway.live_state.update(running=False, started=None)
+
+    def test_stuck_build_flag_is_released(self):
+        """Те саме для збірки розкладу: зависла збірка не блокує оновлення назавжди."""
+        now = gateway.datetime.now(gateway.KYIV)
+        gateway.state.update(running=True,
+                             started=(now - gateway.timedelta(minutes=5)).isoformat(timespec="seconds"))
+        self.assertTrue(gateway.build_busy(now), "збірка щойно почалася")
+        body = self.post("/fast/start", {"force": True, "days": 2}).get_json()
+        self.assertEqual(body["status"], "running", body)
+
+        gateway.state["started"] = (now - gateway.timedelta(hours=3)).isoformat(timespec="seconds")
+        self.assertFalse(gateway.build_busy(now), "зависла збірка більше не блокує")
+        self.assertFalse(gateway.state["running"], "прапорець має зніматися")
+
+        gateway.state.update(running=True,
+                             started=(now - gateway.timedelta(hours=3)).isoformat(timespec="seconds"))
+        body = self.post("/fast/start", {"force": True, "days": 2}).get_json()
+        self.assertNotEqual(body.get("status"), "running", body)
+
     def test_live_alarm_from_health_check(self):
         """Пінг UptimeRobot раз на чверть години запускає читання каналу."""
         now = gateway.datetime.now(gateway.KYIV).replace(hour=12)
@@ -490,9 +550,9 @@ class FastApiTests(unittest.TestCase):
         gateway.live_state["finished"] = (now - gateway.timedelta(minutes=40)).isoformat(timespec="seconds")
         self.assertTrue(gateway.live_due(interval, now))
 
-        gateway.live_state["running"] = True
+        gateway.live_state.update(running=True, started=now.isoformat(timespec="seconds"))
         self.assertFalse(gateway.live_due(interval, now), "уже читаємо")
-        gateway.live_state["running"] = False
+        gateway.live_state.update(running=False, started=None)
 
         night = now.replace(hour=3)
         self.assertFalse(gateway.live_due(interval, night), "серед ночі канал не чіпаємо")
