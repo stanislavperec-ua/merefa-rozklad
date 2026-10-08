@@ -391,6 +391,30 @@ def train_nums() -> set[str]:
     return nums
 
 
+def save_live(fresh: dict) -> tuple[bool, str]:
+    """Комітить live.json, якщо є зміни або позначка часу застаріла. Повертає (закомічено, опис)."""
+    try:
+        old, sha = gh_get_file("live.json")
+    except Exception as e:  # noqa: BLE001
+        log.warning("live.json з GitHub недоступний: %s", e)
+        old, sha = None, None
+    changed = not old or old.get("items") != fresh["items"]
+    # навіть без змін раз на кілька годин оновлюємо позначку часу, щоб у застосунку
+    # не здавалося, що дані застигли
+    stale = True
+    if old and old.get("generated"):
+        try:
+            gen = datetime.fromisoformat(old["generated"])
+            stale = (datetime.now(KYIV) - gen) > timedelta(hours=build_live.REWRITE_AFTER_HOURS)
+        except ValueError:
+            stale = True
+    if not (changed or stale):
+        return False, "змін немає"
+    stamp = datetime.now(KYIV).strftime("%Y-%m-%d %H:%M")
+    gh_put_file("live.json", fresh, sha, f"Live update (gateway) {stamp}")
+    return True, "оновлено" if changed else "змін немає, оновлено позначку часу"
+
+
 def do_live() -> dict:
     """Читає канал і за потреби комітить live.json. Повертає стан для відповіді."""
     try:
@@ -404,28 +428,18 @@ def do_live() -> dict:
 
     committed, message = False, "канал прочитано"
     if GH_TOKEN:
+        # Збій GitHub (прострочений токен, 5xx, тайм-аут) не повинен лишити прапорець running
+        # піднятим: інакше читання каналу зависає до перезапуску сервісу, бо і будильник
+        # (live_due), і маршрут /live бачать «ще працює» і більше нічого не запускають.
         try:
-            old, sha = gh_get_file("live.json")
+            committed, message = save_live(fresh)
         except Exception as e:  # noqa: BLE001
-            log.warning("live.json з GitHub недоступний: %s", e)
-            old, sha = None, None
-        changed = not old or old.get("items") != fresh["items"]
-        # навіть без змін раз на кілька годин оновлюємо позначку часу, щоб у застосунку
-        # не здавалося, що дані застигли
-        stale = True
-        if old and old.get("generated"):
-            try:
-                gen = datetime.fromisoformat(old["generated"])
-                stale = (datetime.now(KYIV) - gen) > timedelta(hours=build_live.REWRITE_AFTER_HOURS)
-            except ValueError:
-                stale = True
-        if changed or stale:
-            stamp = datetime.now(KYIV).strftime("%Y-%m-%d %H:%M")
-            gh_put_file("live.json", fresh, sha, f"Live update (gateway) {stamp}")
-            committed = True
-            message = "оновлено" if changed else "змін немає, оновлено позначку часу"
-        else:
-            message = "змін немає"
+            log.error("live.json не збережено в GitHub: %s", e)
+            with live_lock:
+                live_state.update(running=False, finished=datetime.now(KYIV).isoformat(timespec="seconds"),
+                                  ok=False, message=f"не вдалося зберегти в GitHub: {str(e)[:120]}",
+                                  items=len(fresh["items"]), committed=False)
+                return dict(live_state)
     with live_lock:
         live_state.update(running=False, finished=datetime.now(KYIV).isoformat(timespec="seconds"),
                           ok=True, message=message, items=len(fresh["items"]), committed=committed)

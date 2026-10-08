@@ -444,6 +444,38 @@ class FastApiTests(unittest.TestCase):
         finally:
             gateway.build_live.collect = real
 
+    def test_live_survives_github_failure(self):
+        """Прострочений токен: помилка в /live, але наступне читання не блокується."""
+        real = (gateway.build_live.collect, gateway.gh_get_file, gateway.gh_put_file)
+
+        def refused(*a, **kw):
+            raise gateway.requests.HTTPError("401 Bad credentials")
+
+        gateway.GH_TOKEN = "expired"
+        gateway.gh_get_file = refused
+        gateway.gh_put_file = refused
+        self.fake_channel([])
+        try:
+            r = self.client.post("/live?force=1")
+            self.assertEqual(r.status_code, 200)
+            body = r.get_json()
+            self.assertEqual(body["status"], "error")
+            self.assertFalse(body["ok"])
+            self.assertIn("GitHub", body["message"])
+            self.assertFalse(gateway.live_state["running"], "прапорець running має знятися")
+
+            # токен замінили: наступний запуск проходить, а не відповідає «ще працює»
+            saved = []
+            gateway.GH_TOKEN = "fresh"
+            gateway.gh_get_file = lambda path: (None, None)
+            gateway.gh_put_file = lambda path, payload, sha, message: saved.append(path)
+            again = self.client.post("/live?force=1").get_json()
+            self.assertEqual(again["status"], "ok", again)
+            self.assertEqual(saved, ["live.json"])
+        finally:
+            gateway.build_live.collect, gateway.gh_get_file, gateway.gh_put_file = real
+            gateway.GH_TOKEN = ""
+
     def test_live_alarm_from_health_check(self):
         """Пінг UptimeRobot раз на чверть години запускає читання каналу."""
         now = gateway.datetime.now(gateway.KYIV).replace(hour=12)
