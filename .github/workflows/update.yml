@@ -85,8 +85,23 @@ jobs:
           done
           echo "Бот не впорався за 25 хвилин"; exit 1
 
+      # Канал УЗ читає бот кожні 25 хвилин і сам комітить live.json. Якщо цей крок читав би
+      # канал паралельно, два коміти того самого файлу зустрічались би на git pull --rebase,
+      # і workflow падав би з конфліктом (так і було 30-31.10.2026, з листами про збій).
+      # Тому спершу просимо бота; сам канал читаємо лише тоді, коли бот не впорався.
       - name: Live channel messages (t.me/UZprymisky)
-        run: python build_live.py
+        env:
+          BOT: https://merefa-rozklad.onrender.com
+        run: |
+          STATUS=$(curl -s -m 120 -X POST "$BOT/live" \
+            | python -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)
+          case "$STATUS" in
+            ok|too_soon|running)
+              echo "Канал читає бот (відповідь: $STATUS), запасний шлях не потрібен" ;;
+            *)
+              echo "Бот не впорався (відповідь: '$STATUS'), читаю канал сам"
+              python build_live.py ;;
+          esac
 
       - name: Report timetable failure
         if: steps.timetable.outcome == 'failure'
@@ -101,6 +116,13 @@ jobs:
             echo "Без змін"
             exit 0
           fi
-          git commit -m "Auto-update $(TZ=Europe/Kyiv date +'%Y-%m-%d %H:%M')"
-          git pull --rebase origin main
+          # [skip render]: це лише дані, перезапускати бота на Render через них не треба
+          git commit -m "Auto-update $(TZ=Europe/Kyiv date +'%Y-%m-%d %H:%M') [skip render]"
+          # Бот міг записати ті самі файли, поки працював цей workflow. Його версія не старша
+          # за нашу, тож при конфлікті свій коміт відкидаємо замість того, щоб падати.
+          if ! git pull --rebase origin main; then
+            git rebase --abort
+            echo "Файли тим часом оновив бот, наш коміт не потрібен"
+            exit 0
+          fi
           git push

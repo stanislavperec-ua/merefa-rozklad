@@ -477,6 +477,23 @@ class FastApiTests(unittest.TestCase):
             gateway.build_live.collect, gateway.gh_get_file, gateway.gh_put_file = real
             gateway.GH_TOKEN = ""
 
+    def test_data_commits_skip_render_deploy(self):
+        """Коміти даних не повинні перезапускати бота на Render."""
+        sent = []
+
+        class Ok:
+            def raise_for_status(self):
+                pass
+
+        real_put, fake_fn = gateway.requests.put, gateway.gh_put_file
+        gateway.gh_put_file = self._saved[3]       # справжня функція, а не підміна з setUp
+        gateway.requests.put = lambda url, **kw: sent.append(kw["json"]["message"]) or Ok()
+        try:
+            gateway.gh_put_file("live.json", {"items": []}, "sha", "Live update (gateway) 2026-10-31 22:00")
+        finally:
+            gateway.requests.put, gateway.gh_put_file = real_put, fake_fn
+        self.assertEqual(sent, ["Live update (gateway) 2026-10-31 22:00 [skip render]"])
+
     def test_stuck_live_flag_is_released(self):
         """Зависле читання каналу не повинно глушити будильник до перезапуску сервісу."""
         now = gateway.datetime.now(gateway.KYIV).replace(hour=12)

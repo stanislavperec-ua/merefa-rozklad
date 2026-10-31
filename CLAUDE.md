@@ -24,7 +24,7 @@ Mini App локально: `python -m http.server 8765` у цій папці (з
 
 | Частина | Як оновлюється |
 |---|---|
-| бот (`bot.py`, `gateway.py`, `fastbuild.py`, парсери) | Render сам, на кожен коміт у `main` |
+| бот (`bot.py`, `gateway.py`, `fastbuild.py`, парсери) | Render сам, на кожен коміт у `main`, крім комітів із `[skip render]` (так позначені всі коміти даних) |
 | Mini App (`index.html`) | GitHub Pages сам, на кожен коміт |
 | воркер (`worker.js`) | **руками**: коміт нічого не розгортає, треба залити через API Cloudflare (порядок у README, граблі в CONTEXT.md) |
 

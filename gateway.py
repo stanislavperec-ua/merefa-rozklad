@@ -219,9 +219,14 @@ def gh_get_file(path: str) -> tuple[dict | None, str | None]:
     return json.loads(raw), data["sha"]
 
 
+# Бот комітить лише дані. Без цієї позначки Render розгортав би сервіс заново на кожен такий
+# коміт, тобто перезапускав би бота щопівгодини, а сесії кнопки ↻ при цьому губилися б.
+SKIP_DEPLOY = " [skip render]"
+
+
 def gh_put_file(path: str, payload: dict, sha: str | None, message: str) -> None:
     body = json.dumps(payload, ensure_ascii=False, indent=1) + "\n"
-    req = {"message": message,
+    req = {"message": message + SKIP_DEPLOY,
            "content": base64.b64encode(body.encode("utf-8")).decode("ascii"),
            "committer": {"name": "merefa-gateway", "email": "noreply@users.noreply.github.com"}}
     if sha:
