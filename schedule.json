@@ -1,6 +1,6 @@
 {
  "version": 2,
- "generated": "2026-11-24T06:01:27+02:00",
+ "generated": "2026-11-24T13:01:16+02:00",
  "source": "https://swrailway.gov.ua/timetable/eltrain/",
  "horizon": {
   "from": "2026-11-24",
@@ -4308,14 +4308,12 @@
   }
  },
  "stats": {
-  "requests": 70,
+  "requests": 67,
   "skipped_days": 0,
   "busy_hits": 0,
   "trains": 21,
   "route": "Mini App (телефон користувача)",
-  "errors": [
-   "tid=30757 (6704): сторінку поїзда 30757 телефон не передав"
-  ],
+  "errors": [],
   "source": "mini app"
  }
 }
